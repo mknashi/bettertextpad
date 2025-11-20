@@ -609,7 +609,7 @@ const RichTextEditor = ({ value, onChange }) => {
   );
 };
 
-const BetterNotePad = () => {
+const BetterTextPad = () => {
   const [tabs, setTabs] = useState([]);
   const [activeTabId, setActiveTabId] = useState(null);
   const [nextId, setNextId] = useState(1);
@@ -3664,4 +3664,4 @@ const BetterNotePad = () => {
   );
 };
 
-export default BetterNotePad;
+export default BetterTextPad;

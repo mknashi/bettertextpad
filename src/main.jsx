@@ -1,10 +1,10 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import BetterNotePad from './BetterNotePad.jsx'
+import BetterTextPad from './BetterTextPad.jsx'
 import './index.css'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <BetterNotePad />
+    <BetterTextPad />
   </React.StrictMode>,
 )
