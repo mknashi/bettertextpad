@@ -2789,7 +2789,7 @@ const BetterTextPad = () => {
             <span className="text-xs font-bold text-indigo-400">BETTER TEXT PAD</span>
             <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${theme === 'dark' ? 'bg-indigo-500/20 text-indigo-300' : 'bg-indigo-100 text-indigo-600'}`}>BETA</span>
           </div>
-          <div className={`text-sm font-medium ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>Developer Pad</div>
+          <div className={`text-[11px] font-medium ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>Code Editor • JSON • XML • CSV</div>
         </div>
 
         <div className="flex gap-1.5 ml-4">
@@ -2802,9 +2802,12 @@ const BetterTextPad = () => {
             New
           </button>
 
-          <label className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-sm cursor-pointer transition-colors ${theme === 'dark' ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-gray-200 hover:bg-gray-300 text-gray-800'}`}>
+          <label
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-sm cursor-pointer transition-colors ${theme === 'dark' ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-gray-200 hover:bg-gray-300 text-gray-800'}`}
+            title="Open files: JSON, XML, CSV, HTML, JS, TXT, and more"
+          >
             <Upload className="w-4 h-4" />
-            Open
+            Open File
             <input
               type="file"
               onChange={openFile}
@@ -3287,10 +3290,33 @@ const BetterTextPad = () => {
           </>
         ) : (
           <div className={`flex items-center justify-center h-full w-full ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
-            <div className="text-center">
+            <div className="text-center max-w-md px-6">
               <FileText className="w-16 h-16 mx-auto mb-4 opacity-40" />
-              <p className={`text-lg font-medium ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>No file open</p>
-              <p className="text-sm mt-2">Create a new file or open an existing one</p>
+              <p className={`text-xl font-bold mb-2 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>Welcome to Better Text Pad</p>
+              <p className={`text-sm mb-4 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
+                A powerful code editor with support for JSON, XML, and CSV files
+              </p>
+              <div className={`text-xs space-y-2 text-left ${theme === 'dark' ? 'text-gray-500' : 'text-gray-500'}`}>
+                <div className="flex items-center gap-2">
+                  <span className="text-green-500">✓</span>
+                  <span>JSON formatter and validator</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-green-500">✓</span>
+                  <span>XML editor with syntax highlighting</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-green-500">✓</span>
+                  <span>CSV file editor with live preview</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-green-500">✓</span>
+                  <span>Multi-tab editing and auto-save</span>
+                </div>
+              </div>
+              <p className={`text-sm mt-6 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
+                Click <span className="font-semibold">New</span> or <span className="font-semibold">Open File</span> to get started
+              </p>
             </div>
           </div>
         )}
