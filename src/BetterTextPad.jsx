@@ -3353,8 +3353,8 @@ const BetterTextPad = () => {
                       </div>
                     </>
                   )}
-                  {renderEditorWorkspace()}
-                  
+                  {(!isMarkdownTab || !isMarkdownPreviewCollapsed) && renderEditorWorkspace()}
+
                 </div>
               </div>
             </div>
