@@ -3128,7 +3128,7 @@ const BetterTextPad = () => {
 
       {/* Editor Area */}
       <div className="flex-1 overflow-hidden flex flex-col" style={{ maxWidth: '100%' }}>
-        {activeTab ? (
+        {activeTab && activeTab.title !== 'Welcome' ? (
           <>
             {/* Editor Section */}
             <div className="flex-1 flex overflow-hidden border-b-2 border-gray-700 group" style={{ maxWidth: '100%' }}>
