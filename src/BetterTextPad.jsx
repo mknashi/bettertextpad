@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { X, Plus, Save, Upload, ChevronLeft, ChevronRight, Search, Replace, Code2, StickyNote, CheckSquare, ChevronsLeft, ChevronsRight, GripVertical, Bold, Italic, Underline, Sun, Moon, Settings, ChevronDown, ChevronUp, Info, FileText, Braces, FileCode } from 'lucide-react';
+import { marked } from 'marked';
 
 const BRACE_PAIRS = {
   '{': '}',
@@ -182,6 +183,48 @@ const detectCSVContent = (text = '') => {
   const allowedVariance = Math.max(1, Math.floor(maxColumns * 0.2));
   if (maxColumns - minColumns > allowedVariance) return false;
   return true;
+};
+
+const detectMarkdownContent = (text = '', filename = '') => {
+  if (!text && !filename) return false;
+
+  // Check file extension first
+  if (filename && filename.toLowerCase().endsWith('.md')) return true;
+
+  if (!text) return false;
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+
+  // Don't detect as markdown if it looks like JSON or XML
+  if (looksLikeJSON(trimmed) || looksLikeXML(trimmed)) return false;
+  if (trimmed.startsWith('{') || trimmed.startsWith('[') || trimmed.startsWith('<')) return false;
+
+  // Check for common markdown patterns
+  const markdownPatterns = [
+    /^#{1,6}\s+/m,           // Headers
+    /^\*{1,3}[^*]+\*{1,3}/m, // Bold/italic
+    /^_{1,3}[^_]+_{1,3}/m,   // Bold/italic with underscores
+    /^\[.+\]\(.+\)/m,        // Links
+    /^!\[.+\]\(.+\)/m,       // Images
+    /^>\s+/m,                // Blockquotes
+    /^-{3,}$/m,              // Horizontal rules
+    /^\*{3,}$/m,             // Horizontal rules
+    /^```/m,                 // Code blocks
+    /^`[^`]+`/m,             // Inline code
+    /^\s*[-*+]\s+/m,         // Unordered lists
+    /^\s*\d+\.\s+/m,         // Ordered lists
+    /^\|.+\|/m,              // Tables
+  ];
+
+  let matchCount = 0;
+  for (const pattern of markdownPatterns) {
+    if (pattern.test(trimmed)) {
+      matchCount++;
+      if (matchCount >= 2) return true; // Need at least 2 markdown patterns
+    }
+  }
+
+  return false;
 };
 
 const getLineColumnFromIndex = (text, index) => {
@@ -639,6 +682,8 @@ const BetterTextPad = () => {
   const [activeCsvRowIndex, setActiveCsvRowIndex] = useState(null);
   const [csvDetectionMessage, setCsvDetectionMessage] = useState(null);
   const [csvDetectionLocks, setCsvDetectionLocks] = useState({});
+  const [markdownPreviewHeight, setMarkdownPreviewHeight] = useState(DEFAULT_CSV_PREVIEW_HEIGHT);
+  const [isMarkdownPreviewCollapsed, setIsMarkdownPreviewCollapsed] = useState(false);
   const [theme, setTheme] = useState(loadThemePreference);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [autoPairingEnabled, setAutoPairingEnabled] = useState(true);
@@ -665,6 +710,7 @@ const BetterTextPad = () => {
   const todoSidebarDragState = useRef({ active: false, startX: 0, startWidth: 256 });
   const csvPreviewDragState = useRef({ active: false, startY: 0, startHeight: DEFAULT_CSV_PREVIEW_HEIGHT });
   const csvColumnDragState = useRef({ active: false, startX: 0, startWidth: DEFAULT_CSV_COLUMN_WIDTH, columnIndex: null, tabId: null });
+  const markdownPreviewDragState = useRef({ active: false, startY: 0, startHeight: DEFAULT_CSV_PREVIEW_HEIGHT });
   const csvPreviewRowRefs = useRef(new Map());
   const csvEditorRowRefs = useRef(new Map());
   const csvDetectionMessageTimeoutRef = useRef(null);
@@ -2118,6 +2164,23 @@ const BetterTextPad = () => {
     return isCsvByContent;
   }, [isCsvFileName, isCsvByContent, csvDetectionLocks, activeTab?.id]);
   const isCSVTab = shouldAutoCsv;
+
+  // Markdown detection
+  const isMarkdownFileName = useMemo(() => {
+    const name = (activeTab?.filePath || activeTab?.title || '').toLowerCase();
+    return name.endsWith('.md') || name.endsWith('.markdown');
+  }, [activeTab?.filePath, activeTab?.title]);
+  const isMarkdownByContent = useMemo(() => {
+    if (isMarkdownFileName) return false;
+    if (!activeTab?.content) return false;
+    return detectMarkdownContent(activeTab.content, activeTab?.title || '');
+  }, [activeTab?.content, activeTab?.title, isMarkdownFileName]);
+  const shouldAutoMarkdown = useMemo(() => {
+    if (isMarkdownFileName) return true;
+    return isMarkdownByContent;
+  }, [isMarkdownFileName, isMarkdownByContent]);
+  const isMarkdownTab = shouldAutoMarkdown && !isCSVTab; // CSV takes precedence
+
   const editorTopPaddingPx = '16px';
   const parsedCsvContent = useMemo(() => {
     if (!isCSVTab || !activeTab?.content) return [];
@@ -2136,6 +2199,17 @@ const BetterTextPad = () => {
     const rows = csvData.slice(1);
     return { header, rows, columnCount, rowCount: csvData.length };
   }, [csvData]);
+
+  // Markdown preview HTML
+  const markdownHtml = useMemo(() => {
+    if (!isMarkdownTab || !activeTab?.content) return '';
+    try {
+      return marked.parse(activeTab.content);
+    } catch (error) {
+      console.error('Markdown parsing error:', error);
+      return '<p style="color: red;">Error parsing markdown</p>';
+    }
+  }, [isMarkdownTab, activeTab?.content]);
   const csvRowCount = useMemo(() => {
     if (!csvData || csvData.length <= 1) return 0;
     return csvData.length - 1;
@@ -3055,6 +3129,58 @@ const BetterTextPad = () => {
 
               <div className="flex flex-1 overflow-hidden min-w-0" style={{ maxWidth: '100%' }}>
                 <div className="flex flex-1 flex-col overflow-hidden min-w-0" style={{ maxWidth: '100%' }}>
+                  {isMarkdownTab && (
+                    <>
+                      <div
+                        className="bg-gray-900 border-b border-gray-800 flex flex-col min-w-0"
+                        style={
+                          isMarkdownPreviewCollapsed
+                            ? { flex: 1, minHeight: 0 }
+                            : { height: `${Math.round(markdownPreviewHeight)}px`, minHeight: MIN_CSV_PREVIEW_HEIGHT, maxHeight: MAX_CSV_PREVIEW_HEIGHT }
+                        }
+                      >
+                        <div className="flex items-center justify-between px-4 py-2 text-xs uppercase tracking-wide text-gray-400 flex-shrink-0">
+                          <span>Markdown Preview</span>
+                        </div>
+                        <div
+                          className="flex-1 min-w-0 overflow-auto px-6 py-4"
+                          style={{ backgroundColor: theme === 'dark' ? '#111827' : '#ffffff' }}
+                        >
+                          <div
+                            className="markdown-preview prose prose-invert max-w-none"
+                            dangerouslySetInnerHTML={{ __html: markdownHtml }}
+                          />
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 bg-gray-900/50 px-3 py-0.5 border-b border-gray-700/30">
+                        <button
+                          type="button"
+                          className="flex-1 h-1 bg-transparent hover:bg-indigo-500/40 cursor-row-resize transition-colors flex items-center justify-center group"
+                          aria-label="Resize markdown preview area"
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            markdownPreviewDragState.current.active = true;
+                            markdownPreviewDragState.current.startY = e.clientY;
+                            markdownPreviewDragState.current.startHeight = markdownPreviewHeight;
+                          }}
+                        >
+                          <span className="w-8 h-0.5 bg-gray-600 rounded-full group-hover:bg-indigo-400" />
+                        </button>
+                        <button
+                          type="button"
+                          className="text-xs px-2 py-1 rounded border border-gray-700 text-gray-300 hover:text-white hover:border-indigo-400 transition-colors"
+                          onClick={() => setIsMarkdownPreviewCollapsed(prev => !prev)}
+                          aria-pressed={isMarkdownPreviewCollapsed}
+                        >
+                          {isMarkdownPreviewCollapsed ? (
+                            <span className="flex items-center gap-1"><ChevronDown className="w-3 h-3" /> Expand Editor</span>
+                          ) : (
+                            <span className="flex items-center gap-1"><ChevronUp className="w-3 h-3" /> Collapse Editor</span>
+                          )}
+                        </button>
+                      </div>
+                    </>
+                  )}
                   {isCSVTab && csvPreviewStats && (
                     <>
                       <div
@@ -3545,6 +3671,48 @@ const BetterTextPad = () => {
     document.addEventListener('mousemove', handleCsvPreviewResizeMove);
     document.addEventListener('mouseup', handleCsvPreviewResizeEnd);
   }, [csvPreviewHeight, handleCsvPreviewResizeMove, handleCsvPreviewResizeEnd]);
+
+  // Markdown preview resize handlers
+  const handleMarkdownPreviewResizeMove = useCallback((event) => {
+    if (!markdownPreviewDragState.current.active) return;
+    const delta = event.clientY - markdownPreviewDragState.current.startY;
+    const nextHeight = Math.min(
+      MAX_CSV_PREVIEW_HEIGHT,
+      Math.max(MIN_CSV_PREVIEW_HEIGHT, markdownPreviewDragState.current.startHeight + delta)
+    );
+    setMarkdownPreviewHeight(nextHeight);
+  }, []);
+
+  const handleMarkdownPreviewResizeEnd = useCallback(() => {
+    if (!markdownPreviewDragState.current.active) return;
+    markdownPreviewDragState.current = {
+      ...markdownPreviewDragState.current,
+      active: false
+    };
+    document.removeEventListener('mousemove', handleMarkdownPreviewResizeMove);
+    document.removeEventListener('mouseup', handleMarkdownPreviewResizeEnd);
+  }, [handleMarkdownPreviewResizeMove]);
+
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      if (markdownPreviewDragState.current.active) {
+        handleMarkdownPreviewResizeMove(e);
+      }
+    };
+    const handleMouseUp = () => {
+      if (markdownPreviewDragState.current.active) {
+        handleMarkdownPreviewResizeEnd();
+      }
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [handleMarkdownPreviewResizeMove, handleMarkdownPreviewResizeEnd]);
 
   const csvColumnResizeMoveRef = useRef(null);
   const csvColumnResizeEndRef = useRef(null);
