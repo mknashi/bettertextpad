@@ -3640,6 +3640,17 @@ const BetterNotePad = () => {
                       </span>
                     </button>
                   </div>
+                  <div className="pt-3 border-t border-gray-800">
+                    <a
+                      href="/privacy.html"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-2 px-3 py-2 text-gray-400 hover:text-indigo-400 hover:bg-gray-900 rounded transition-colors"
+                    >
+                      <Info className="w-4 h-4" />
+                      <span className="text-sm">Privacy Policy</span>
+                    </a>
+                  </div>
                 </div>
               </div>
             )}
