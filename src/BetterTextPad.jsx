@@ -783,6 +783,7 @@ const BetterTextPad = () => {
   const activeTabIdRef = useRef(activeTabId);
   const braceOverlayRef = useRef(null);
   const errorOverlayRef = useRef(null);
+  const syntaxOverlayRef = useRef(null);
   const lineNumberRef = useRef(null);
   const pendingCursorRef = useRef(null);
   const lastCursorRef = useRef({ line: 1, column: 1 });
@@ -806,6 +807,9 @@ const BetterTextPad = () => {
     const scrollTop = textareaRef.current.scrollTop;
     const scrollLeft = textareaRef.current.scrollLeft;
 
+    if (syntaxOverlayRef.current) {
+      syntaxOverlayRef.current.style.transform = `translate(${-scrollLeft}px, -${scrollTop}px)`;
+    }
     if (braceOverlayRef.current) {
       braceOverlayRef.current.style.transform = `translate(${-scrollLeft}px, -${scrollTop}px)`;
     }
@@ -2943,6 +2947,7 @@ const BetterTextPad = () => {
           {/* Syntax Highlighting Overlay for JavaScript */}
           {isJavaScriptFile && (
             <div
+              ref={syntaxOverlayRef}
               className="absolute inset-0 z-10 pointer-events-none select-none overflow-hidden"
               style={{ lineHeight: '24px', whiteSpace: isCSVTab ? 'pre' : 'pre-wrap', wordBreak: isCSVTab ? 'normal' : 'break-all', willChange: 'transform', paddingTop: editorTopPaddingPx, paddingLeft: '16px', paddingRight: '16px', paddingBottom: '16px' }}
             >
