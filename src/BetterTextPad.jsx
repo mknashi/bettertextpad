@@ -229,7 +229,8 @@ const detectMarkdownContent = (text = '', filename = '') => {
 
 // JavaScript syntax highlighting tokenizer
 const highlightJavaScript = (line) => {
-  if (!line) return [{ type: 'normal', text: '' }];
+  // Always return at least the line text, even if empty
+  if (!line) return [{ type: 'normal', text: line || '' }];
 
   const tokens = [];
   const jsKeywords = /\b(const|let|var|function|return|if|else|for|while|do|switch|case|break|continue|try|catch|finally|throw|new|class|extends|import|export|from|default|async|await|yield|this|super|static|get|set|typeof|instanceof|delete|void|in|of|true|false|null|undefined)\b/g;
@@ -243,47 +244,52 @@ const highlightJavaScript = (line) => {
 
   // Find comments (highest priority)
   let match;
-  while ((match = jsComments.exec(line)) !== null) {
-    segments.push({ start: match.index, end: match.index + match[0].length, type: 'comment', text: match[0] });
-  }
-
-  // Find strings
-  jsStrings.lastIndex = 0;
-  while ((match = jsStrings.exec(line)) !== null) {
-    // Skip if inside a comment
-    if (!segments.some(s => s.type === 'comment' && match.index >= s.start && match.index < s.end)) {
-      segments.push({ start: match.index, end: match.index + match[0].length, type: 'string', text: match[0] });
+  try {
+    while ((match = jsComments.exec(line)) !== null) {
+      segments.push({ start: match.index, end: match.index + match[0].length, type: 'comment', text: match[0] });
     }
-  }
 
-  // Find keywords
-  jsKeywords.lastIndex = 0;
-  while ((match = jsKeywords.exec(line)) !== null) {
-    // Skip if inside comment or string
-    if (!segments.some(s => (s.type === 'comment' || s.type === 'string') && match.index >= s.start && match.index < s.end)) {
-      segments.push({ start: match.index, end: match.index + match[0].length, type: 'keyword', text: match[0] });
+    // Find strings
+    jsStrings.lastIndex = 0;
+    while ((match = jsStrings.exec(line)) !== null) {
+      // Skip if inside a comment
+      if (!segments.some(s => s.type === 'comment' && match.index >= s.start && match.index < s.end)) {
+        segments.push({ start: match.index, end: match.index + match[0].length, type: 'string', text: match[0] });
+      }
     }
-  }
 
-  // Find numbers
-  jsNumbers.lastIndex = 0;
-  while ((match = jsNumbers.exec(line)) !== null) {
-    // Skip if inside comment, string, or keyword
-    if (!segments.some(s => match.index >= s.start && match.index < s.end)) {
-      segments.push({ start: match.index, end: match.index + match[0].length, type: 'number', text: match[0] });
+    // Find keywords
+    jsKeywords.lastIndex = 0;
+    while ((match = jsKeywords.exec(line)) !== null) {
+      // Skip if inside comment or string
+      if (!segments.some(s => (s.type === 'comment' || s.type === 'string') && match.index >= s.start && match.index < s.end)) {
+        segments.push({ start: match.index, end: match.index + match[0].length, type: 'keyword', text: match[0] });
+      }
     }
-  }
 
-  // Find function calls
-  jsFunctions.lastIndex = 0;
-  while ((match = jsFunctions.exec(line)) !== null) {
-    const funcName = match[1];
-    const funcStart = match.index;
-    const funcEnd = match.index + funcName.length;
-    // Skip if inside comment, string, or already marked
-    if (!segments.some(s => funcStart >= s.start && funcStart < s.end)) {
-      segments.push({ start: funcStart, end: funcEnd, type: 'function', text: funcName });
+    // Find numbers
+    jsNumbers.lastIndex = 0;
+    while ((match = jsNumbers.exec(line)) !== null) {
+      // Skip if inside comment, string, or keyword
+      if (!segments.some(s => match.index >= s.start && match.index < s.end)) {
+        segments.push({ start: match.index, end: match.index + match[0].length, type: 'number', text: match[0] });
+      }
     }
+
+    // Find function calls
+    jsFunctions.lastIndex = 0;
+    while ((match = jsFunctions.exec(line)) !== null) {
+      const funcName = match[1];
+      const funcStart = match.index;
+      const funcEnd = match.index + funcName.length;
+      // Skip if inside comment, string, or already marked
+      if (!segments.some(s => funcStart >= s.start && funcStart < s.end)) {
+        segments.push({ start: funcStart, end: funcEnd, type: 'function', text: funcName });
+      }
+    }
+  } catch (e) {
+    // If regex fails, just return the whole line as normal text
+    return [{ type: 'normal', text: line }];
   }
 
   // Sort segments by start position
@@ -301,12 +307,17 @@ const highlightJavaScript = (line) => {
     lastIndex = segment.end;
   }
 
-  // Add remaining text
+  // Add remaining text - CRITICAL: always add remaining text to prevent truncation
   if (lastIndex < line.length) {
     tokens.push({ type: 'normal', text: line.substring(lastIndex) });
   }
 
-  return tokens.length > 0 ? tokens : [{ type: 'normal', text: line }];
+  // If no tokens were created, return the whole line
+  if (tokens.length === 0) {
+    return [{ type: 'normal', text: line }];
+  }
+
+  return tokens;
 };
 
 const getLineColumnFromIndex = (text, index) => {
