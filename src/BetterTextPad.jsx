@@ -811,7 +811,7 @@ const BetterTextPad = () => {
     const loadTabs = () => {
       const savedTabs = localStorage.getItem('notepad-tabs');
       const savedActiveId = localStorage.getItem('notepad-active-tab');
-      
+
       if (savedTabs) {
         try {
           const parsed = JSON.parse(savedTabs);
@@ -827,7 +827,17 @@ const BetterTextPad = () => {
           localStorage.removeItem('notepad-active-tab');
         }
       }
-      createNewTab();
+      // Create Welcome tab on first access
+      const welcomeTab = {
+        id: 1,
+        title: 'Welcome',
+        content: '',
+        isModified: false,
+        filePath: null
+      };
+      setTabs([welcomeTab]);
+      setActiveTabId(welcomeTab.id);
+      setNextId(2);
     };
 
     loadTabs();
