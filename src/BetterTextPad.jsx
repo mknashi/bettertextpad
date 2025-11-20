@@ -682,6 +682,7 @@ const BetterTextPad = () => {
   const [activeCsvRowIndex, setActiveCsvRowIndex] = useState(null);
   const [csvDetectionMessage, setCsvDetectionMessage] = useState(null);
   const [csvDetectionLocks, setCsvDetectionLocks] = useState({});
+  const [markdownDetectionMessage, setMarkdownDetectionMessage] = useState(null);
   const [markdownPreviewHeight, setMarkdownPreviewHeight] = useState(DEFAULT_CSV_PREVIEW_HEIGHT);
   const [isMarkdownPreviewCollapsed, setIsMarkdownPreviewCollapsed] = useState(false);
   const [theme, setTheme] = useState(loadThemePreference);
@@ -714,6 +715,7 @@ const BetterTextPad = () => {
   const csvPreviewRowRefs = useRef(new Map());
   const csvEditorRowRefs = useRef(new Map());
   const csvDetectionMessageTimeoutRef = useRef(null);
+  const markdownDetectionMessageTimeoutRef = useRef(null);
   const settingsMenuRef = useRef(null);
   const newTodoInputRef = useRef(null);
   const syncScrollVisuals = useCallback(() => {
@@ -743,6 +745,9 @@ const BetterTextPad = () => {
     return () => {
       if (csvDetectionMessageTimeoutRef.current) {
         clearTimeout(csvDetectionMessageTimeoutRef.current);
+      }
+      if (markdownDetectionMessageTimeoutRef.current) {
+        clearTimeout(markdownDetectionMessageTimeoutRef.current);
       }
     };
   }, []);
@@ -2281,6 +2286,20 @@ const BetterTextPad = () => {
       setCsvDetectionMessage(null);
     }, 5000);
   }, [activeTab?.id, isCsvFileName, isCsvByContent, csvDetectionLocks]);
+
+  // Markdown detection message
+  useEffect(() => {
+    if (!activeTab || isMarkdownFileName || isCSVTab) return;
+    if (!isMarkdownByContent) return;
+    setMarkdownDetectionMessage('Detected markdown file, switching to Markdown editor…');
+    if (markdownDetectionMessageTimeoutRef.current) {
+      clearTimeout(markdownDetectionMessageTimeoutRef.current);
+    }
+    markdownDetectionMessageTimeoutRef.current = setTimeout(() => {
+      setMarkdownDetectionMessage(null);
+    }, 5000);
+  }, [activeTab?.id, isMarkdownFileName, isMarkdownByContent, isCSVTab]);
+
   const structureTree = useMemo(() => {
     if (!activeTab?.content) return { type: null, nodes: [] };
     const trimmed = activeTab.content.trim();
@@ -2896,7 +2915,8 @@ const BetterTextPad = () => {
 
   const renderDevPanel = () => {
     const structurePaneStyle = { width: `${Math.round(structureWidth)}px` };
-    const showStructurePane = !isCSVTab;
+    // Only show structure panel for JSON and XML files
+    const showStructurePane = !isCSVTab && !isMarkdownTab && structureTree.type !== null;
     return (
     <div className="flex flex-col h-full">
       {/* Menu Bar */}
@@ -2906,7 +2926,7 @@ const BetterTextPad = () => {
             <span className="text-xs font-bold text-indigo-400">BETTER TEXT PAD</span>
             <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${theme === 'dark' ? 'bg-indigo-500/20 text-indigo-300' : 'bg-indigo-100 text-indigo-600'}`}>BETA</span>
           </div>
-          <div className={`text-[11px] font-medium ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>Code & Text Editor • JSON • XML • CSV • TXT</div>
+          <div className={`text-[11px] font-medium ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>Code & Text Editor • JSON • XML • CSV • Markdown • TXT</div>
         </div>
 
         <div className="flex gap-1.5 ml-4">
@@ -3086,6 +3106,13 @@ const BetterTextPad = () => {
         <div className="bg-yellow-400 border-b-2 border-yellow-500 text-red-800 px-5 py-3 text-sm flex items-center gap-3 shadow-lg font-semibold">
           <Info className="w-4 h-4" />
           <span className="tracking-wide">{csvDetectionMessage}</span>
+        </div>
+      )}
+
+      {markdownDetectionMessage && (
+        <div className="bg-blue-400 border-b-2 border-blue-500 text-blue-900 px-5 py-3 text-sm flex items-center gap-3 shadow-lg font-semibold">
+          <Info className="w-4 h-4" />
+          <span className="tracking-wide">{markdownDetectionMessage}</span>
         </div>
       )}
 
