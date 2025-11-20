@@ -969,16 +969,28 @@ const BetterTextPad = () => {
 
   const closeTab = (tabId) => {
     const newTabs = tabs.filter(t => t.id !== tabId);
+
+    // If closing all tabs, create a Welcome tab
+    if (newTabs.length === 0) {
+      const welcomeTab = {
+        id: nextId,
+        title: 'Welcome',
+        content: '',
+        isModified: false,
+        filePath: null
+      };
+      setTabs([welcomeTab]);
+      setActiveTabId(welcomeTab.id);
+      setNextId(nextId + 1);
+      return;
+    }
+
     setTabs(newTabs);
 
     if (activeTabId === tabId) {
-      if (newTabs.length > 0) {
-        const index = tabs.findIndex(t => t.id === tabId);
-        const newActiveTab = newTabs[Math.max(0, index - 1)];
-        setActiveTabId(newActiveTab.id);
-      } else {
-        setActiveTabId(null);
-      }
+      const index = tabs.findIndex(t => t.id === tabId);
+      const newActiveTab = newTabs[Math.max(0, index - 1)];
+      setActiveTabId(newActiveTab.id);
     }
   };
 
@@ -996,8 +1008,16 @@ const BetterTextPad = () => {
   };
 
   const closeAllTabs = () => {
-    setTabs([]);
-    setActiveTabId(null);
+    const welcomeTab = {
+      id: nextId,
+      title: 'Welcome',
+      content: '',
+      isModified: false,
+      filePath: null
+    };
+    setTabs([welcomeTab]);
+    setActiveTabId(welcomeTab.id);
+    setNextId(nextId + 1);
   };
 
   const closeOtherTabs = (tabId) => {
