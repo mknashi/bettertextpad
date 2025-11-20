@@ -3557,7 +3557,21 @@ const BetterTextPad = () => {
                 </div>
               </div>
               <p className={`text-sm mt-6 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
-                Click <span className="font-semibold">New</span> or <span className="font-semibold">Open File</span> to get started
+                Click{' '}
+                <button
+                  onClick={createNewTab}
+                  className={`font-semibold underline hover:no-underline cursor-pointer ${theme === 'dark' ? 'text-blue-400 hover:text-blue-300' : 'text-blue-600 hover:text-blue-700'}`}
+                >
+                  New
+                </button>
+                {' '}or{' '}
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className={`font-semibold underline hover:no-underline cursor-pointer ${theme === 'dark' ? 'text-blue-400 hover:text-blue-300' : 'text-blue-600 hover:text-blue-700'}`}
+                >
+                  Open File
+                </button>
+                {' '}to get started
               </p>
             </div>
           </div>
