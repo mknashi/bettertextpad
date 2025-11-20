@@ -227,6 +227,114 @@ const detectMarkdownContent = (text = '', filename = '') => {
   return false;
 };
 
+// JavaScript syntax highlighting tokenizer
+const highlightJavaScript = (line) => {
+  // Always return at least the line text, even if empty
+  if (!line) return [{ type: 'normal', text: line || '' }];
+
+  const tokens = [];
+  const jsKeywords = /\b(const|let|var|function|return|if|else|for|while|do|switch|case|break|continue|try|catch|finally|throw|new|class|extends|import|export|from|default|async|await|yield|this|super|static|get|set|typeof|instanceof|delete|void|in|of|true|false|null|undefined)\b/g;
+  const jsStrings = /(["'`])(?:(?=(\\?))\2.)*?\1/g;
+  const jsComments = /(\/\/.*$|\/\*[\s\S]*?\*\/)/g;
+  const jsNumbers = /\b\d+(\.\d+)?\b/g;
+  const jsFunctions = /\b([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\(/g;
+
+  // Mark all special segments
+  const segments = [];
+
+  // Find comments (highest priority)
+  let match;
+  try {
+    while ((match = jsComments.exec(line)) !== null) {
+      segments.push({ start: match.index, end: match.index + match[0].length, type: 'comment', text: match[0] });
+    }
+
+    // Find strings
+    jsStrings.lastIndex = 0;
+    while ((match = jsStrings.exec(line)) !== null) {
+      // Skip if inside a comment
+      if (!segments.some(s => s.type === 'comment' && match.index >= s.start && match.index < s.end)) {
+        segments.push({ start: match.index, end: match.index + match[0].length, type: 'string', text: match[0] });
+      }
+    }
+
+    // Find keywords
+    jsKeywords.lastIndex = 0;
+    while ((match = jsKeywords.exec(line)) !== null) {
+      // Skip if inside comment or string
+      if (!segments.some(s => (s.type === 'comment' || s.type === 'string') && match.index >= s.start && match.index < s.end)) {
+        segments.push({ start: match.index, end: match.index + match[0].length, type: 'keyword', text: match[0] });
+      }
+    }
+
+    // Find numbers
+    jsNumbers.lastIndex = 0;
+    while ((match = jsNumbers.exec(line)) !== null) {
+      // Skip if inside comment, string, or keyword
+      if (!segments.some(s => match.index >= s.start && match.index < s.end)) {
+        segments.push({ start: match.index, end: match.index + match[0].length, type: 'number', text: match[0] });
+      }
+    }
+
+    // Find function calls
+    jsFunctions.lastIndex = 0;
+    while ((match = jsFunctions.exec(line)) !== null) {
+      const funcName = match[1];
+      const funcStart = match.index;
+      const funcEnd = match.index + funcName.length;
+      // Skip if inside comment, string, or already marked
+      if (!segments.some(s => funcStart >= s.start && funcStart < s.end)) {
+        segments.push({ start: funcStart, end: funcEnd, type: 'function', text: funcName });
+      }
+    }
+  } catch (e) {
+    // If regex fails, just return the whole line as normal text
+    return [{ type: 'normal', text: line }];
+  }
+
+  // Sort segments by start position
+  segments.sort((a, b) => a.start - b.start);
+
+  // Build tokens from segments
+  let lastIndex = 0;
+  for (const segment of segments) {
+    // Add normal text before this segment
+    if (segment.start > lastIndex) {
+      tokens.push({ type: 'normal', text: line.substring(lastIndex, segment.start) });
+    }
+    // Add the segment
+    tokens.push({ type: segment.type, text: segment.text });
+    lastIndex = segment.end;
+  }
+
+  // Add remaining text - CRITICAL: always add remaining text to prevent truncation
+  if (lastIndex < line.length) {
+    tokens.push({ type: 'normal', text: line.substring(lastIndex) });
+  }
+
+  // If no tokens were created, return the whole line
+  if (tokens.length === 0) {
+    return [{ type: 'normal', text: line }];
+  }
+
+  // CRITICAL: Validate that all characters are accounted for
+  const tokenText = tokens.map(t => t.text || '').join('');
+  if (tokenText.length !== line.length) {
+    // Something went wrong in tokenization, return the whole line as normal text
+    console.warn('Tokenization mismatch:', {
+      expected: line.length,
+      got: tokenText.length,
+      line,
+      tokens,
+      diff: line.length - tokenText.length,
+      missing: line.substring(tokenText.length)
+    });
+    return [{ type: 'normal', text: line }];
+  }
+
+  return tokens;
+};
+
 const getLineColumnFromIndex = (text, index) => {
   const safeIndex = Math.max(0, Math.min(index, text.length));
   const textBeforeCursor = text.substring(0, safeIndex);
@@ -701,6 +809,7 @@ const BetterTextPad = () => {
   const activeTabIdRef = useRef(activeTabId);
   const braceOverlayRef = useRef(null);
   const errorOverlayRef = useRef(null);
+  const syntaxOverlayRef = useRef(null);
   const lineNumberRef = useRef(null);
   const pendingCursorRef = useRef(null);
   const lastCursorRef = useRef({ line: 1, column: 1 });
@@ -724,6 +833,9 @@ const BetterTextPad = () => {
     const scrollTop = textareaRef.current.scrollTop;
     const scrollLeft = textareaRef.current.scrollLeft;
 
+    if (syntaxOverlayRef.current) {
+      syntaxOverlayRef.current.style.transform = `translate(${-scrollLeft}px, -${scrollTop}px)`;
+    }
     if (braceOverlayRef.current) {
       braceOverlayRef.current.style.transform = `translate(${-scrollLeft}px, -${scrollTop}px)`;
     }
@@ -944,11 +1056,16 @@ const BetterTextPad = () => {
   useEffect(() => {
     if (!pendingAutoFormat) return;
 
-    const { tabId, content } = pendingAutoFormat;
+    const { tabId, content, fileName } = pendingAutoFormat;
     setPendingAutoFormat(null);
 
     const trimmed = content.trim();
-    if (looksLikeJSON(trimmed) || trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    const fileNameLower = (fileName || '').toLowerCase();
+    const isJsFile = fileNameLower.endsWith('.js') || fileNameLower.endsWith('.jsx') ||
+                     fileNameLower.endsWith('.ts') || fileNameLower.endsWith('.tsx');
+
+    // Don't auto-format JavaScript files as JSON
+    if (!isJsFile && (looksLikeJSON(trimmed) || trimmed.startsWith('{') || trimmed.startsWith('['))) {
       formatJSON({ tabId, content, autoTriggered: false });
     } else if (looksLikeXML(trimmed) || trimmed.startsWith('<')) {
       formatXML({ tabId, content, autoTriggered: false });
@@ -1774,7 +1891,7 @@ const BetterTextPad = () => {
       setNextId(nextId + 1);
 
       // Trigger auto-format via useEffect
-      setPendingAutoFormat({ tabId: newTabId, content });
+      setPendingAutoFormat({ tabId: newTabId, content, fileName: file.name });
     };
     reader.readAsText(file);
     e.target.value = ''; // Reset input
@@ -2251,6 +2368,14 @@ const BetterTextPad = () => {
   }, [isMarkdownFileName, isMarkdownByContent]);
   const isMarkdownTab = shouldAutoMarkdown && !isCSVTab; // CSV takes precedence
 
+  // JavaScript file detection
+  const isJavaScriptFile = useMemo(() => {
+    const name = (activeTab?.filePath || activeTab?.title || '').toLowerCase();
+    // Temporarily disabled - syntax highlighting has rendering issues
+    return false;
+    // return name.endsWith('.js') || name.endsWith('.jsx') || name.endsWith('.ts') || name.endsWith('.tsx');
+  }, [activeTab?.filePath, activeTab?.title]);
+
   const editorTopPaddingPx = '16px';
   const parsedCsvContent = useMemo(() => {
     if (!isCSVTab || !activeTab?.content) return [];
@@ -2369,14 +2494,24 @@ const BetterTextPad = () => {
     if (!activeTab?.content) return { type: null, nodes: [] };
     const trimmed = activeTab.content.trim();
     if (!trimmed) return { type: null, nodes: [] };
-    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
-      return { type: 'JSON', nodes: buildJSONStructure(activeTab.content) };
+
+    // Check file extension to avoid false detection of JS files as JSON
+    const fileName = (activeTab?.filePath || activeTab?.title || '').toLowerCase();
+    const isJsFile = fileName.endsWith('.js') || fileName.endsWith('.jsx') || fileName.endsWith('.ts') || fileName.endsWith('.tsx');
+
+    // Only detect as JSON if it's actually valid JSON and not a JS file
+    if (!isJsFile && (trimmed.startsWith('{') || trimmed.startsWith('['))) {
+      // Use looksLikeJSON to validate it's actually parseable JSON
+      if (looksLikeJSON(trimmed)) {
+        return { type: 'JSON', nodes: buildJSONStructure(activeTab.content) };
+      }
     }
+
     if (trimmed.startsWith('<')) {
       return { type: 'XML', nodes: buildXMLStructure(activeTab.content) };
     }
     return { type: null, nodes: [] };
-  }, [activeTab?.content]);
+  }, [activeTab?.content, activeTab?.filePath, activeTab?.title]);
 
   const structureNodeList = useMemo(() => {
     const list = [];
@@ -2803,8 +2938,8 @@ const BetterTextPad = () => {
         {/* Line Numbers with Error Indicators */}
         <div
           ref={lineNumberRef}
-          className="editor-line-numbers text-gray-500 text-right font-mono text-sm px-3 select-none border-r border-gray-700"
-          style={{ minWidth: '60px', transform: 'translateZ(0)', paddingTop: editorTopPaddingPx, paddingBottom: '16px' }}
+          className="editor-line-numbers text-gray-500 text-right font-mono text-sm select-none border-r border-gray-700"
+          style={{ minWidth: '50px', transform: 'translateZ(0)', paddingTop: editorTopPaddingPx, paddingBottom: '16px' }}
         >
           {editorLines.map((_, index) => {
             // For CSV files, skip numbering the first line (header row)
@@ -2825,8 +2960,8 @@ const BetterTextPad = () => {
             return (
               <div
                 key={index}
-                className={`leading-6 px-1 ${hasError ? `${rowTone} font-bold` : ''} ${activeCsvClass}`}
-                style={{ minHeight: '24px', backgroundColor }}
+                className={`leading-6 px-3 flex items-start justify-end ${hasError ? `${rowTone} font-bold` : ''} ${activeCsvClass}`}
+                style={{ minHeight: '24px', height: '24px', backgroundColor, marginLeft: '-12px', marginRight: '-12px', paddingLeft: '12px', paddingRight: '12px' }}
               >
                 {hasError && <span className={`${accentClass} mr-1`}>●</span>}
                 {lineNum}
@@ -2837,6 +2972,50 @@ const BetterTextPad = () => {
 
         {/* Editor with inline error markers */}
         <div className="flex-1 relative bg-gray-900 overflow-auto font-mono text-sm">
+          {/* Syntax Highlighting Overlay for JavaScript */}
+          {isJavaScriptFile && (
+            <div
+              ref={syntaxOverlayRef}
+              className="absolute inset-0 z-10 pointer-events-none select-none overflow-hidden font-mono text-sm"
+              style={{ lineHeight: '24px', whiteSpace: 'pre-wrap', wordBreak: 'break-word', willChange: 'transform', paddingTop: editorTopPaddingPx, paddingLeft: '16px', paddingRight: '16px', paddingBottom: '16px' }}
+            >
+              {editorLines.map((line, lineIndex) => {
+                const tokens = highlightJavaScript(line);
+
+                // Safety check: if tokenization failed or tokens are invalid, show raw line
+                const tokenText = tokens.map(t => t?.text || '').join('');
+                const isValid = tokens.length > 0 && tokenText.length === line.length;
+
+                if (!isValid) {
+                  return (
+                    <div key={`syntax-${lineIndex}`} style={{ minHeight: '24px' }}>
+                      <span style={{ color: '#e5e7eb' }}>{line}</span>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div key={`syntax-${lineIndex}`} style={{ minHeight: '24px' }}>
+                    {tokens.map((token, tokenIdx) => {
+                      let color = '#e5e7eb'; // default text color
+                      if (token.type === 'keyword') color = '#c678dd'; // purple for keywords
+                      else if (token.type === 'string') color = '#98c379'; // green for strings
+                      else if (token.type === 'comment') color = '#5c6370'; // gray for comments
+                      else if (token.type === 'number') color = '#d19a66'; // orange for numbers
+                      else if (token.type === 'function') color = '#61afef'; // blue for functions
+
+                      return (
+                        <span key={`token-${lineIndex}-${tokenIdx}`} style={{ color }}>
+                          {token.text || ''}
+                        </span>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
           {braceMarkersByLine.size > 0 && (
             <div
               ref={braceOverlayRef}
@@ -2968,10 +3147,10 @@ const BetterTextPad = () => {
             onKeyDown={handleEditorKeyDown}
             onKeyUp={() => updateCursorPosition()}
             onClick={() => updateCursorPosition()}
-            className="absolute inset-0 z-20 w-full h-full bg-transparent text-gray-100 font-mono text-sm resize-none focus:outline-none caret-white"
+            className={`absolute inset-0 z-20 w-full h-full bg-transparent font-mono text-sm resize-none focus:outline-none caret-white ${isJavaScriptFile ? 'text-transparent' : 'text-gray-100'}`}
             placeholder="Start typing..."
             spellCheck={false}
-            style={{ lineHeight: '24px', whiteSpace: isCSVTab ? 'pre' : 'pre-wrap', wordBreak: isCSVTab ? 'normal' : 'break-all', overflowX: isCSVTab ? 'auto' : 'hidden', paddingTop: editorTopPaddingPx, paddingLeft: '16px', paddingRight: '16px', paddingBottom: '16px' }}
+            style={{ lineHeight: '24px', whiteSpace: isCSVTab ? 'pre' : 'pre-wrap', wordBreak: isCSVTab ? 'normal' : (isJavaScriptFile ? 'break-word' : 'break-all'), overflowX: isCSVTab ? 'auto' : 'hidden', paddingTop: editorTopPaddingPx, paddingLeft: '16px', paddingRight: '16px', paddingBottom: '16px' }}
           />
         </div>
       </div>
