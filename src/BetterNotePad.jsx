@@ -668,6 +668,7 @@ const BetterNotePad = () => {
   const csvEditorRowRefs = useRef(new Map());
   const csvDetectionMessageTimeoutRef = useRef(null);
   const settingsMenuRef = useRef(null);
+  const newTodoInputRef = useRef(null);
   const syncScrollVisuals = useCallback(() => {
     if (!textareaRef.current) return;
     const scrollTop = textareaRef.current.scrollTop;
@@ -728,6 +729,13 @@ const BetterNotePad = () => {
       document.removeEventListener('mousedown', handleClick);
     };
   }, [isSettingsOpen]);
+
+  // Auto-focus on todo input when panel is opened
+  useEffect(() => {
+    if (currentPanel === 'todo' && newTodoInputRef.current) {
+      newTodoInputRef.current.focus();
+    }
+  }, [currentPanel]);
 
   // Load tabs from localStorage on mount
   useEffect(() => {
@@ -2552,6 +2560,7 @@ const BetterNotePad = () => {
       </div>
       <div className="flex items-center gap-2 mt-4">
         <input
+          ref={newTodoInputRef}
           type="text"
           value={newTodoText}
           onChange={(e) => setNewTodoText(e.target.value)}
