@@ -2789,7 +2789,7 @@ const BetterTextPad = () => {
             <span className="text-xs font-bold text-indigo-400">BETTER TEXT PAD</span>
             <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${theme === 'dark' ? 'bg-indigo-500/20 text-indigo-300' : 'bg-indigo-100 text-indigo-600'}`}>BETA</span>
           </div>
-          <div className={`text-[11px] font-medium ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>Code Editor • JSON • XML • CSV</div>
+          <div className={`text-[11px] font-medium ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>Code & Text Editor • JSON • XML • CSV • TXT</div>
         </div>
 
         <div className="flex gap-1.5 ml-4">
@@ -3294,7 +3294,7 @@ const BetterTextPad = () => {
               <FileText className="w-16 h-16 mx-auto mb-4 opacity-40" />
               <p className={`text-xl font-bold mb-2 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>Welcome to Better Text Pad</p>
               <p className={`text-sm mb-4 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
-                A powerful code editor with support for JSON, XML, and CSV files
+                A powerful code & text editor with support for JSON, XML, CSV, and TXT files
               </p>
               <div className={`text-xs space-y-2 text-left ${theme === 'dark' ? 'text-gray-500' : 'text-gray-500'}`}>
                 <div className="flex items-center gap-2">
@@ -3308,6 +3308,10 @@ const BetterTextPad = () => {
                 <div className="flex items-center gap-2">
                   <span className="text-green-500">✓</span>
                   <span>CSV file editor with live preview</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-green-500">✓</span>
+                  <span>Text files, logs, markdown & more</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-green-500">✓</span>
