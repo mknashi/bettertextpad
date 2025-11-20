@@ -321,7 +321,14 @@ const highlightJavaScript = (line) => {
   const tokenText = tokens.map(t => t.text || '').join('');
   if (tokenText.length !== line.length) {
     // Something went wrong in tokenization, return the whole line as normal text
-    console.warn('Tokenization mismatch:', { expected: line.length, got: tokenText.length, line });
+    console.warn('Tokenization mismatch:', {
+      expected: line.length,
+      got: tokenText.length,
+      line,
+      tokens,
+      diff: line.length - tokenText.length,
+      missing: line.substring(tokenText.length)
+    });
     return [{ type: 'normal', text: line }];
   }
 
@@ -2364,7 +2371,9 @@ const BetterTextPad = () => {
   // JavaScript file detection
   const isJavaScriptFile = useMemo(() => {
     const name = (activeTab?.filePath || activeTab?.title || '').toLowerCase();
-    return name.endsWith('.js') || name.endsWith('.jsx') || name.endsWith('.ts') || name.endsWith('.tsx');
+    // Temporarily disabled - syntax highlighting has rendering issues
+    return false;
+    // return name.endsWith('.js') || name.endsWith('.jsx') || name.endsWith('.ts') || name.endsWith('.tsx');
   }, [activeTab?.filePath, activeTab?.title]);
 
   const editorTopPaddingPx = '16px';
@@ -2929,8 +2938,8 @@ const BetterTextPad = () => {
         {/* Line Numbers with Error Indicators */}
         <div
           ref={lineNumberRef}
-          className="editor-line-numbers text-gray-500 text-right font-mono text-sm px-3 select-none border-r border-gray-700"
-          style={{ minWidth: '60px', transform: 'translateZ(0)', paddingTop: editorTopPaddingPx, paddingBottom: '16px' }}
+          className="editor-line-numbers text-gray-500 text-right font-mono text-sm select-none border-r border-gray-700"
+          style={{ minWidth: '50px', transform: 'translateZ(0)', paddingTop: editorTopPaddingPx, paddingBottom: '16px' }}
         >
           {editorLines.map((_, index) => {
             // For CSV files, skip numbering the first line (header row)
@@ -2951,8 +2960,8 @@ const BetterTextPad = () => {
             return (
               <div
                 key={index}
-                className={`leading-6 px-1 ${hasError ? `${rowTone} font-bold` : ''} ${activeCsvClass}`}
-                style={{ minHeight: '24px', backgroundColor }}
+                className={`leading-6 px-3 flex items-start justify-end ${hasError ? `${rowTone} font-bold` : ''} ${activeCsvClass}`}
+                style={{ minHeight: '24px', height: '24px', backgroundColor, marginLeft: '-12px', marginRight: '-12px', paddingLeft: '12px', paddingRight: '12px' }}
               >
                 {hasError && <span className={`${accentClass} mr-1`}>●</span>}
                 {lineNum}
@@ -2967,17 +2976,27 @@ const BetterTextPad = () => {
           {isJavaScriptFile && (
             <div
               ref={syntaxOverlayRef}
-              className="absolute inset-0 z-10 pointer-events-none select-none overflow-hidden"
-              style={{ lineHeight: '24px', whiteSpace: isCSVTab ? 'pre' : 'pre-wrap', wordBreak: isCSVTab ? 'normal' : 'break-all', willChange: 'transform', paddingTop: editorTopPaddingPx, paddingLeft: '16px', paddingRight: '16px', paddingBottom: '16px' }}
+              className="absolute inset-0 z-10 pointer-events-none select-none overflow-hidden font-mono text-sm"
+              style={{ lineHeight: '24px', whiteSpace: 'pre-wrap', wordBreak: 'break-word', willChange: 'transform', paddingTop: editorTopPaddingPx, paddingLeft: '16px', paddingRight: '16px', paddingBottom: '16px' }}
             >
               {editorLines.map((line, lineIndex) => {
                 const tokens = highlightJavaScript(line);
+
+                // Safety check: if tokenization failed or tokens are invalid, show raw line
+                const tokenText = tokens.map(t => t?.text || '').join('');
+                const isValid = tokens.length > 0 && tokenText.length === line.length;
+
+                if (!isValid) {
+                  return (
+                    <div key={`syntax-${lineIndex}`} style={{ minHeight: '24px' }}>
+                      <span style={{ color: '#e5e7eb' }}>{line}</span>
+                    </div>
+                  );
+                }
+
                 return (
                   <div key={`syntax-${lineIndex}`} style={{ minHeight: '24px' }}>
                     {tokens.map((token, tokenIdx) => {
-                      // Skip empty tokens
-                      if (!token || token.text === undefined || token.text === null) return null;
-
                       let color = '#e5e7eb'; // default text color
                       if (token.type === 'keyword') color = '#c678dd'; // purple for keywords
                       else if (token.type === 'string') color = '#98c379'; // green for strings
@@ -2987,12 +3006,10 @@ const BetterTextPad = () => {
 
                       return (
                         <span key={`token-${lineIndex}-${tokenIdx}`} style={{ color }}>
-                          {token.text}
+                          {token.text || ''}
                         </span>
                       );
                     })}
-                    {/* Fallback: if no tokens or tokens don't cover the whole line, show the raw line */}
-                    {tokens.length === 0 && <span style={{ color: '#e5e7eb' }}>{line}</span>}
                   </div>
                 );
               })}
@@ -3133,7 +3150,7 @@ const BetterTextPad = () => {
             className={`absolute inset-0 z-20 w-full h-full bg-transparent font-mono text-sm resize-none focus:outline-none caret-white ${isJavaScriptFile ? 'text-transparent' : 'text-gray-100'}`}
             placeholder="Start typing..."
             spellCheck={false}
-            style={{ lineHeight: '24px', whiteSpace: isCSVTab ? 'pre' : 'pre-wrap', wordBreak: isCSVTab ? 'normal' : 'break-all', overflowX: isCSVTab ? 'auto' : 'hidden', paddingTop: editorTopPaddingPx, paddingLeft: '16px', paddingRight: '16px', paddingBottom: '16px' }}
+            style={{ lineHeight: '24px', whiteSpace: isCSVTab ? 'pre' : 'pre-wrap', wordBreak: isCSVTab ? 'normal' : (isJavaScriptFile ? 'break-word' : 'break-all'), overflowX: isCSVTab ? 'auto' : 'hidden', paddingTop: editorTopPaddingPx, paddingLeft: '16px', paddingRight: '16px', paddingBottom: '16px' }}
           />
         </div>
       </div>
