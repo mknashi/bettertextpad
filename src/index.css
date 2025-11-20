@@ -123,3 +123,8 @@ body.theme-dark .editor-line-numbers {
 body.theme-light .editor-line-numbers {
   background-color: #f3f4f6 !important;
 }
+
+/* Hide scrollbar for tab bar */
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}

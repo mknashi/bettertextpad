@@ -648,6 +648,7 @@ const BetterTextPad = () => {
   const [isNavCollapsed, setIsNavCollapsed] = useState(true);
   const [draggedTabId, setDraggedTabId] = useState(null);
   const [dragOverTabId, setDragOverTabId] = useState(null);
+  const [tabContextMenu, setTabContextMenu] = useState(null);
   const textareaRef = useRef(null);
   const autoFormatTimeoutRef = useRef(null);
   const tabsRef = useRef(tabs);
@@ -736,6 +737,23 @@ const BetterTextPad = () => {
       newTodoInputRef.current.focus();
     }
   }, [currentPanel]);
+
+  // Close context menu when clicking outside
+  useEffect(() => {
+    const handleClick = () => {
+      if (tabContextMenu) {
+        setTabContextMenu(null);
+      }
+    };
+
+    if (tabContextMenu) {
+      document.addEventListener('mousedown', handleClick);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClick);
+    };
+  }, [tabContextMenu]);
 
   // Load tabs from localStorage on mount
   useEffect(() => {
@@ -899,9 +917,34 @@ const BetterTextPad = () => {
         setActiveTabId(newActiveTab.id);
       } else {
         setActiveTabId(null);
-        createNewTab();
       }
     }
+  };
+
+  const closeTabsToRight = (tabId) => {
+    const index = tabs.findIndex(t => t.id === tabId);
+    if (index === -1) return;
+
+    const newTabs = tabs.slice(0, index + 1);
+    setTabs(newTabs);
+
+    // If active tab was closed, activate the clicked tab
+    if (!newTabs.find(t => t.id === activeTabId)) {
+      setActiveTabId(tabId);
+    }
+  };
+
+  const closeAllTabs = () => {
+    setTabs([]);
+    setActiveTabId(null);
+  };
+
+  const closeOtherTabs = (tabId) => {
+    const tabToKeep = tabs.find(t => t.id === tabId);
+    if (!tabToKeep) return;
+
+    setTabs([tabToKeep]);
+    setActiveTabId(tabId);
   };
 
   const handleTabDragStart = (e, tabId) => {
@@ -2916,7 +2959,11 @@ const BetterTextPad = () => {
           </button>
         </div>
         <div
-          className="flex overflow-x-auto flex-1"
+          className="flex overflow-x-auto flex-1 scrollbar-hide"
+          style={{
+            scrollbarWidth: 'none',
+            msOverflowStyle: 'none'
+          }}
           onDoubleClick={handleTabBarDoubleClick}
         >
           {tabs.map(tab => (
@@ -2929,6 +2976,14 @@ const BetterTextPad = () => {
               onDragLeave={handleTabDragLeave}
               onDrop={(e) => handleTabDrop(e, tab.id)}
               onDragEnd={handleTabDragEnd}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setTabContextMenu({
+                  x: e.clientX,
+                  y: e.clientY,
+                  tabId: tab.id
+                });
+              }}
               className={`flex items-center gap-2 px-4 py-2 border-r border-gray-700 cursor-move min-w-[150px] max-w-[200px] group
                 ${tab.id === activeTabId ? 'bg-gray-900 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-750'}
                 ${draggedTabId === tab.id ? 'opacity-50' : ''}
@@ -3690,6 +3745,58 @@ const BetterTextPad = () => {
       <div className="flex-1 flex flex-col overflow-hidden">
         {renderPanel()}
       </div>
+
+      {/* Tab Context Menu */}
+      {tabContextMenu && (
+        <div
+          className="fixed bg-gray-800 border border-gray-700 rounded shadow-lg py-1 z-50"
+          style={{ left: tabContextMenu.x, top: tabContextMenu.y }}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <button
+            onClick={() => {
+              closeTab(tabContextMenu.tabId);
+              setTabContextMenu(null);
+            }}
+            className="w-full text-left px-4 py-2 text-sm text-gray-200 hover:bg-gray-700 flex items-center gap-2"
+          >
+            <X className="w-4 h-4" />
+            Close Tab
+          </button>
+          <button
+            onClick={() => {
+              closeOtherTabs(tabContextMenu.tabId);
+              setTabContextMenu(null);
+            }}
+            className="w-full text-left px-4 py-2 text-sm text-gray-200 hover:bg-gray-700 flex items-center gap-2"
+          >
+            <X className="w-4 h-4" />
+            Close Other Tabs
+          </button>
+          <button
+            onClick={() => {
+              closeTabsToRight(tabContextMenu.tabId);
+              setTabContextMenu(null);
+            }}
+            className="w-full text-left px-4 py-2 text-sm text-gray-200 hover:bg-gray-700 flex items-center gap-2"
+            disabled={tabs.findIndex(t => t.id === tabContextMenu.tabId) === tabs.length - 1}
+          >
+            <X className="w-4 h-4" />
+            Close Tabs to Right
+          </button>
+          <div className="border-t border-gray-700 my-1" />
+          <button
+            onClick={() => {
+              closeAllTabs();
+              setTabContextMenu(null);
+            }}
+            className="w-full text-left px-4 py-2 text-sm text-gray-200 hover:bg-gray-700 flex items-center gap-2"
+          >
+            <X className="w-4 h-4" />
+            Close All Tabs
+          </button>
+        </div>
+      )}
     </div>
   );
 };
