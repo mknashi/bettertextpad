@@ -1666,9 +1666,36 @@ const BetterTextPad = () => {
         ? { ...tab, content, isModified: true }
         : tab
     ));
-    if (errorMessage) {
-      setErrorMessage(null);
+
+    // Only clear error message if content is now valid
+    if (errorMessage && errorMessage.type === 'JSON') {
+      try {
+        const trimmed = content.trim();
+        if (trimmed && trimmed.startsWith('{') || trimmed.startsWith('[')) {
+          JSON.parse(content);
+          // Content is valid JSON, clear the error
+          setErrorMessage(null);
+        }
+      } catch (e) {
+        // Still has errors, keep error panel open
+      }
+    } else if (errorMessage && errorMessage.type === 'XML') {
+      try {
+        const trimmed = content.trim();
+        if (trimmed && trimmed.startsWith('<')) {
+          const parser = new DOMParser();
+          const xmlDoc = parser.parseFromString(content, 'text/xml');
+          const parserError = xmlDoc.getElementsByTagName('parsererror');
+          if (parserError.length === 0) {
+            // Content is valid XML, clear the error
+            setErrorMessage(null);
+          }
+        }
+      } catch (e) {
+        // Still has errors, keep error panel open
+      }
     }
+
     // Disable auto-formatting - it interferes with editing by reformatting while typing
     // Users can still manually format using the Format JSON/XML buttons
     // queueAutoFormat(tabId, content);
