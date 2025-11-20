@@ -944,11 +944,16 @@ const BetterTextPad = () => {
   useEffect(() => {
     if (!pendingAutoFormat) return;
 
-    const { tabId, content } = pendingAutoFormat;
+    const { tabId, content, fileName } = pendingAutoFormat;
     setPendingAutoFormat(null);
 
     const trimmed = content.trim();
-    if (looksLikeJSON(trimmed) || trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    const fileNameLower = (fileName || '').toLowerCase();
+    const isJsFile = fileNameLower.endsWith('.js') || fileNameLower.endsWith('.jsx') ||
+                     fileNameLower.endsWith('.ts') || fileNameLower.endsWith('.tsx');
+
+    // Don't auto-format JavaScript files as JSON
+    if (!isJsFile && (looksLikeJSON(trimmed) || trimmed.startsWith('{') || trimmed.startsWith('['))) {
       formatJSON({ tabId, content, autoTriggered: false });
     } else if (looksLikeXML(trimmed) || trimmed.startsWith('<')) {
       formatXML({ tabId, content, autoTriggered: false });
@@ -1774,7 +1779,7 @@ const BetterTextPad = () => {
       setNextId(nextId + 1);
 
       // Trigger auto-format via useEffect
-      setPendingAutoFormat({ tabId: newTabId, content });
+      setPendingAutoFormat({ tabId: newTabId, content, fileName: file.name });
     };
     reader.readAsText(file);
     e.target.value = ''; // Reset input
@@ -2369,14 +2374,24 @@ const BetterTextPad = () => {
     if (!activeTab?.content) return { type: null, nodes: [] };
     const trimmed = activeTab.content.trim();
     if (!trimmed) return { type: null, nodes: [] };
-    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
-      return { type: 'JSON', nodes: buildJSONStructure(activeTab.content) };
+
+    // Check file extension to avoid false detection of JS files as JSON
+    const fileName = (activeTab?.filePath || activeTab?.title || '').toLowerCase();
+    const isJsFile = fileName.endsWith('.js') || fileName.endsWith('.jsx') || fileName.endsWith('.ts') || fileName.endsWith('.tsx');
+
+    // Only detect as JSON if it's actually valid JSON and not a JS file
+    if (!isJsFile && (trimmed.startsWith('{') || trimmed.startsWith('['))) {
+      // Use looksLikeJSON to validate it's actually parseable JSON
+      if (looksLikeJSON(trimmed)) {
+        return { type: 'JSON', nodes: buildJSONStructure(activeTab.content) };
+      }
     }
+
     if (trimmed.startsWith('<')) {
       return { type: 'XML', nodes: buildXMLStructure(activeTab.content) };
     }
     return { type: null, nodes: [] };
-  }, [activeTab?.content]);
+  }, [activeTab?.content, activeTab?.filePath, activeTab?.title]);
 
   const structureNodeList = useMemo(() => {
     const list = [];
