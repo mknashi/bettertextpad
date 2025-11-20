@@ -718,6 +718,7 @@ const BetterTextPad = () => {
   const markdownDetectionMessageTimeoutRef = useRef(null);
   const settingsMenuRef = useRef(null);
   const newTodoInputRef = useRef(null);
+  const fileInputRef = useRef(null);
   const syncScrollVisuals = useCallback(() => {
     if (!textareaRef.current) return;
     const scrollTop = textareaRef.current.scrollTop;
@@ -2976,6 +2977,7 @@ const BetterTextPad = () => {
             <Upload className="w-4 h-4" />
             Open File
             <input
+              ref={fileInputRef}
               type="file"
               onChange={openFile}
               className="hidden"
