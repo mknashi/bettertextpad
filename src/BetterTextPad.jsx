@@ -317,6 +317,14 @@ const highlightJavaScript = (line) => {
     return [{ type: 'normal', text: line }];
   }
 
+  // CRITICAL: Validate that all characters are accounted for
+  const tokenText = tokens.map(t => t.text || '').join('');
+  if (tokenText.length !== line.length) {
+    // Something went wrong in tokenization, return the whole line as normal text
+    console.warn('Tokenization mismatch:', { expected: line.length, got: tokenText.length, line });
+    return [{ type: 'normal', text: line }];
+  }
+
   return tokens;
 };
 
@@ -2967,6 +2975,9 @@ const BetterTextPad = () => {
                 return (
                   <div key={`syntax-${lineIndex}`} style={{ minHeight: '24px' }}>
                     {tokens.map((token, tokenIdx) => {
+                      // Skip empty tokens
+                      if (!token || token.text === undefined || token.text === null) return null;
+
                       let color = '#e5e7eb'; // default text color
                       if (token.type === 'keyword') color = '#c678dd'; // purple for keywords
                       else if (token.type === 'string') color = '#98c379'; // green for strings
@@ -2980,6 +2991,8 @@ const BetterTextPad = () => {
                         </span>
                       );
                     })}
+                    {/* Fallback: if no tokens or tokens don't cover the whole line, show the raw line */}
+                    {tokens.length === 0 && <span style={{ color: '#e5e7eb' }}>{line}</span>}
                   </div>
                 );
               })}
