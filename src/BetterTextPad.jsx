@@ -3110,7 +3110,7 @@ const BetterTextPad = () => {
       )}
 
       {markdownDetectionMessage && (
-        <div className="bg-blue-400 border-b-2 border-blue-500 text-blue-900 px-5 py-3 text-sm flex items-center gap-3 shadow-lg font-semibold">
+        <div className="bg-yellow-400 border-b-2 border-yellow-500 text-red-800 px-5 py-3 text-sm flex items-center gap-3 shadow-lg font-semibold">
           <Info className="w-4 h-4" />
           <span className="tracking-wide">{markdownDetectionMessage}</span>
         </div>
