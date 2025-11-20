@@ -1667,17 +1667,19 @@ const BetterTextPad = () => {
         : tab
     ));
 
-    // Only clear error message if content is now valid
+    // Update error message with current errors
     if (errorMessage && errorMessage.type === 'JSON') {
       try {
         const trimmed = content.trim();
-        if (trimmed && trimmed.startsWith('{') || trimmed.startsWith('[')) {
+        if (trimmed && (trimmed.startsWith('{') || trimmed.startsWith('['))) {
           JSON.parse(content);
           // Content is valid JSON, clear the error
           setErrorMessage(null);
         }
       } catch (e) {
-        // Still has errors, keep error panel open
+        // Re-validate and update error list
+        const updatedErrorDetails = buildJSONErrorDetails(content, e);
+        setErrorMessage(updatedErrorDetails);
       }
     } else if (errorMessage && errorMessage.type === 'XML') {
       try {
@@ -1689,10 +1691,15 @@ const BetterTextPad = () => {
           if (parserError.length === 0) {
             // Content is valid XML, clear the error
             setErrorMessage(null);
+          } else {
+            // Re-validate and update error message
+            const errorText = parserError[0].textContent;
+            const updatedErrorDetails = buildXMLErrorDetails(content, errorText);
+            setErrorMessage(updatedErrorDetails);
           }
         }
       } catch (e) {
-        // Still has errors, keep error panel open
+        // Keep existing error
       }
     }
 
