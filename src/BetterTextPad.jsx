@@ -828,6 +828,7 @@ const BetterTextPad = () => {
   const settingsMenuRef = useRef(null);
   const newTodoInputRef = useRef(null);
   const fileInputRef = useRef(null);
+  const markdownPreviewRef = useRef(null);
   const syncScrollVisuals = useCallback(() => {
     if (!textareaRef.current) return;
     const scrollTop = textareaRef.current.scrollTop;
@@ -2367,6 +2368,46 @@ const BetterTextPad = () => {
     return isMarkdownByContent;
   }, [isMarkdownFileName, isMarkdownByContent]);
   const isMarkdownTab = shouldAutoMarkdown && !isCSVTab; // CSV takes precedence
+  const getMarkdownLineCount = useCallback(() => {
+    const text = activeTab?.content || '';
+    if (!text) return 1;
+    const lines = text.split('\n');
+    return Math.max(1, lines.length);
+  }, [activeTab?.content]);
+  const markdownSyncScroll = useCallback((targetLine) => {
+    if (!isMarkdownTab || !markdownPreviewRef.current) return;
+    const preview = markdownPreviewRef.current;
+    const totalLines = getMarkdownLineCount();
+    const safeLine = Math.max(1, Math.min(targetLine || 1, totalLines));
+    const ratio = (safeLine - 1) / Math.max(1, totalLines - 1);
+    const target = ratio * Math.max(0, preview.scrollHeight - preview.clientHeight);
+    preview.scrollTo({ top: target, behavior: 'smooth' });
+  }, [isMarkdownTab, getMarkdownLineCount]);
+
+  const markdownSyncEditor = useCallback((targetLine) => {
+    if (!isMarkdownTab || !textareaRef.current) return;
+    const line = Math.max(1, targetLine || 1);
+    const index = getIndexFromLineColumn(textareaRef.current.value, line, 1);
+    setSelectionRange(index, index);
+    scrollLineIntoView(line);
+  }, [isMarkdownTab, setSelectionRange]);
+
+  const handleMarkdownEditorClick = useCallback(() => {
+    if (!isMarkdownTab || !textareaRef.current) return;
+    const { line } = getLineColumnFromIndex(textareaRef.current.value, textareaRef.current.selectionStart);
+    markdownSyncScroll(line);
+  }, [isMarkdownTab, markdownSyncScroll]);
+
+  const handleMarkdownPreviewClick = useCallback((event) => {
+    if (!isMarkdownTab || !markdownPreviewRef.current || !textareaRef.current) return;
+    const preview = markdownPreviewRef.current;
+    const rect = preview.getBoundingClientRect();
+    const offsetY = event.clientY - rect.top + preview.scrollTop;
+    const ratio = preview.scrollHeight > 0 ? offsetY / preview.scrollHeight : 0;
+    const totalLines = getMarkdownLineCount();
+    const targetLine = Math.min(totalLines, Math.max(1, Math.round(ratio * Math.max(totalLines - 1, 0)) + 1));
+    markdownSyncEditor(targetLine);
+  }, [isMarkdownTab, markdownPreviewRef, getMarkdownLineCount, markdownSyncEditor]);
 
   // JavaScript file detection
   const isJavaScriptFile = useMemo(() => {
@@ -3146,7 +3187,7 @@ const BetterTextPad = () => {
             }}
             onKeyDown={handleEditorKeyDown}
             onKeyUp={() => updateCursorPosition()}
-            onClick={() => updateCursorPosition()}
+            onClick={() => { updateCursorPosition(); handleMarkdownEditorClick(); }}
             className={`absolute inset-0 z-20 w-full h-full bg-transparent font-mono text-sm resize-none focus:outline-none caret-white ${isJavaScriptFile ? 'text-transparent' : 'text-gray-100'}`}
             placeholder="Start typing..."
             spellCheck={false}
@@ -3415,8 +3456,10 @@ const BetterTextPad = () => {
                           <span>Markdown Preview</span>
                         </div>
                         <div
+                          ref={markdownPreviewRef}
                           className="flex-1 min-w-0 overflow-auto px-6 py-4"
                           style={{ backgroundColor: theme === 'dark' ? '#111827' : '#ffffff' }}
+                          onClick={handleMarkdownPreviewClick}
                         >
                           <div
                             className="markdown-preview prose prose-invert max-w-none"
