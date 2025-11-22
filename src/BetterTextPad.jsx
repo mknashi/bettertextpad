@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { X, Plus, Save, Upload, ChevronLeft, ChevronRight, Search, Replace, Code2, StickyNote, CheckSquare, ChevronsLeft, ChevronsRight, GripVertical, Bold, Italic, Underline, Sun, Moon, Settings, ChevronDown, ChevronUp, Info, FileText, Braces, FileCode } from 'lucide-react';
+import { X, Plus, Save, Upload, ChevronLeft, ChevronRight, Search, Replace, Code2, StickyNote, CheckSquare, ChevronsLeft, ChevronsRight, GripVertical, Bold, Italic, Underline, Sun, Moon, Settings, ChevronDown, ChevronUp, Info, FileText, Braces, FileCode, Folder, FolderOpen, FolderPlus, Edit2, Trash2, Image as ImageIcon } from 'lucide-react';
 import { marked } from 'marked';
 
 const BRACE_PAIRS = {
@@ -40,6 +40,12 @@ const htmlEntityDecode = (input = '') => {
 };
 const stripHtml = (input = '') => htmlEntityDecode(input.replace(/<[^>]*>/g, ' ')).trim();
 const stripAnchors = (input = '') => input.replace(/<a[^>]*>(.*?)<\/a>/gi, '$1');
+const escapeHtml = (input = '') => input
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#39;');
 
 const linkifyHtml = (input = '') => {
   const regex = /((https?:\/\/)[^\s<]+)/gi;
@@ -574,11 +580,16 @@ const buildXMLStructure = (text) => {
 };
 
 const createDefaultNotesState = () => {
-  const firstId = 1;
+  const firstNoteId = 1;
+  const firstFolderId = 1;
   return {
-    tabs: [{ id: firstId, title: '', content: '', images: [] }],
-    activeId: firstId,
-    nextId: firstId + 1
+    notes: [{ id: firstNoteId, folderId: null, title: '', content: '', images: [], createdAt: Date.now(), updatedAt: Date.now(), archived: false }],
+    folders: [],
+    nextNoteId: firstNoteId + 1,
+    nextFolderId: firstFolderId + 1,
+    activeFolderId: null,
+    activeNoteId: null,
+    viewMode: 'tiles'
   };
 };
 
@@ -595,43 +606,70 @@ const loadNotesState = () => {
   const fallback = createDefaultNotesState();
   if (typeof window === 'undefined' || !window?.localStorage) return fallback;
   const storage = window.localStorage;
-  const sanitizeTabs = (tabs) => tabs.map(tab => ({
-    id: typeof tab.id === 'number' ? tab.id : Number(tab.id) || Date.now(),
-    title: typeof tab.title === 'string' ? tab.title : '',
-    content: typeof tab.content === 'string' ? tab.content : '',
-    images: Array.isArray(tab.images) ? tab.images : []
-  }));
+
+  const sanitizeNote = (note) => ({
+    id: typeof note.id === 'number' ? note.id : Number(note.id) || Date.now(),
+    folderId: note.folderId !== undefined ? (note.folderId === null ? null : Number(note.folderId)) : null,
+    title: typeof note.title === 'string' ? note.title : '',
+    content: typeof note.content === 'string' ? note.content : '',
+    images: Array.isArray(note.images) ? note.images : [],
+    createdAt: typeof note.createdAt === 'number' ? note.createdAt : Date.now(),
+    updatedAt: typeof note.updatedAt === 'number' ? note.updatedAt : Date.now(),
+    archived: Boolean(note.archived)
+  });
+
+  const sanitizeFolder = (folder) => ({
+    id: typeof folder.id === 'number' ? folder.id : Number(folder.id) || Date.now(),
+    parentId: folder.parentId !== undefined ? (folder.parentId === null ? null : Number(folder.parentId)) : null,
+    name: typeof folder.name === 'string' ? folder.name : 'Untitled Folder',
+    expanded: typeof folder.expanded === 'boolean' ? folder.expanded : true
+  });
 
   try {
-    const saved = storage.getItem('betternotepad-notes-state');
+    const saved = storage.getItem('betternotepad-notes-state-v2');
     if (saved) {
       const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed.tabs) && parsed.tabs.length > 0) {
-        const tabs = sanitizeTabs(parsed.tabs);
-        const ids = tabs.map(tab => Number(tab.id) || 0);
-        const candidateActive = Number(parsed.activeId);
-        const nextCandidate = Number(parsed.nextId);
+      if (Array.isArray(parsed.notes)) {
+        const notes = parsed.notes.map(sanitizeNote);
+        const folders = Array.isArray(parsed.folders) ? parsed.folders.map(sanitizeFolder) : [];
+        const noteIds = notes.map(n => Number(n.id) || 0);
+        const folderIds = folders.map(f => Number(f.id) || 0);
+
         return {
-          tabs,
-          activeId: tabs.find(tab => tab.id === candidateActive)?.id ?? tabs[0].id,
-          nextId: Number.isFinite(nextCandidate) && nextCandidate > 0 ? nextCandidate : Math.max(...ids) + 1
+          notes,
+          folders,
+          nextNoteId: Number.isFinite(parsed.nextNoteId) && parsed.nextNoteId > 0 ? parsed.nextNoteId : Math.max(0, ...noteIds) + 1,
+          nextFolderId: Number.isFinite(parsed.nextFolderId) && parsed.nextFolderId > 0 ? parsed.nextFolderId : Math.max(0, ...folderIds) + 1,
+          activeFolderId: parsed.activeFolderId !== undefined ? (parsed.activeFolderId === null ? null : Number(parsed.activeFolderId)) : null,
+          activeNoteId: parsed.activeNoteId !== undefined ? (parsed.activeNoteId === null ? null : Number(parsed.activeNoteId)) : null,
+          viewMode: parsed.viewMode === 'tiles' || parsed.viewMode === 'list' ? parsed.viewMode : 'tiles'
         };
       }
     }
 
-    const legacyTabs = storage.getItem('betternotepad-notes');
-    if (legacyTabs) {
-      const parsed = JSON.parse(legacyTabs);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        const tabs = sanitizeTabs(parsed);
-        const ids = tabs.map(tab => Number(tab.id) || 0);
-        const legacyActive = Number(storage.getItem('betternotepad-active-note'));
-        storage.removeItem('betternotepad-notes');
-        storage.removeItem('betternotepad-active-note');
+    // Legacy migration from old tab-based structure
+    const legacySaved = storage.getItem('betternotepad-notes-state');
+    if (legacySaved) {
+      const parsed = JSON.parse(legacySaved);
+      if (Array.isArray(parsed.tabs) && parsed.tabs.length > 0) {
+        const notes = parsed.tabs.map((tab, idx) => ({
+          id: typeof tab.id === 'number' ? tab.id : idx + 1,
+          folderId: null,
+          title: typeof tab.title === 'string' ? tab.title : '',
+          content: typeof tab.content === 'string' ? tab.content : '',
+          images: Array.isArray(tab.images) ? tab.images : [],
+          createdAt: Date.now() - (parsed.tabs.length - idx) * 1000,
+          updatedAt: Date.now() - (parsed.tabs.length - idx) * 1000
+        }));
+        const noteIds = notes.map(n => n.id);
         return {
-          tabs,
-          activeId: tabs.find(tab => tab.id === legacyActive)?.id ?? tabs[0].id,
-          nextId: Math.max(...ids) + 1
+          notes,
+          folders: [],
+          nextNoteId: Math.max(...noteIds) + 1,
+          nextFolderId: 1,
+          activeFolderId: null,
+          activeNoteId: null,
+          viewMode: 'tiles'
         };
       }
     }
@@ -775,9 +813,18 @@ const BetterTextPad = () => {
   const [currentPanel, setCurrentPanel] = useState('dev');
   const initialNotesStateRef = useRef(loadNotesState());
   const initialTodosStateRef = useRef(loadTodosState());
-  const [notesTabs, setNotesTabs] = useState(initialNotesStateRef.current.tabs);
-  const [activeNoteTabId, setActiveNoteTabId] = useState(initialNotesStateRef.current.activeId);
-  const [nextNoteId, setNextNoteId] = useState(initialNotesStateRef.current.nextId);
+  const [notes, setNotes] = useState(initialNotesStateRef.current.notes);
+  const [folders, setFolders] = useState(initialNotesStateRef.current.folders);
+  const [activeFolderId, setActiveFolderId] = useState(initialNotesStateRef.current.activeFolderId);
+  const [activeNoteId, setActiveNoteId] = useState(initialNotesStateRef.current.activeNoteId);
+  const [nextNoteId, setNextNoteId] = useState(initialNotesStateRef.current.nextNoteId);
+  const [nextFolderId, setNextFolderId] = useState(initialNotesStateRef.current.nextFolderId);
+  const [notesViewMode, setNotesViewMode] = useState(initialNotesStateRef.current.viewMode || 'tiles');
+  const [openNoteModalId, setOpenNoteModalId] = useState(null);
+  const [isQuickNoteExpanded, setIsQuickNoteExpanded] = useState(false);
+  const [quickNoteText, setQuickNoteText] = useState('');
+  const [quickNoteTitle, setQuickNoteTitle] = useState('');
+  const [quickNoteImages, setQuickNoteImages] = useState([]);
   const [todoTabs, setTodoTabs] = useState(initialTodosStateRef.current.tabs);
   const [activeTodoTabId, setActiveTodoTabId] = useState(initialTodosStateRef.current.activeId);
   const [nextTodoId, setNextTodoId] = useState(initialTodosStateRef.current.nextId);
@@ -796,6 +843,14 @@ const BetterTextPad = () => {
   const [theme, setTheme] = useState(loadThemePreference);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [autoPairingEnabled, setAutoPairingEnabled] = useState(true);
+  const [moveMenuFolderId, setMoveMenuFolderId] = useState(null);
+  const [dragFolderId, setDragFolderId] = useState(null);
+  const [dragOverFolderId, setDragOverFolderId] = useState(null);
+  const [dragNoteId, setDragNoteId] = useState(null);
+  const [dragOverNoteFolderId, setDragOverNoteFolderId] = useState(null);
+  const noteDragPreviewRef = useRef(null);
+  const isNoteDragging = dragNoteId !== null;
+  const isFolderDragging = dragFolderId !== null;
   const [structureWidth, setStructureWidth] = useState(288);
   const [newTodoText, setNewTodoText] = useState('');
   const [newTodoDueDate, setNewTodoDueDate] = useState('');
@@ -829,6 +884,9 @@ const BetterTextPad = () => {
   const newTodoInputRef = useRef(null);
   const fileInputRef = useRef(null);
   const markdownPreviewRef = useRef(null);
+  const quickNoteInputRef = useRef(null);
+  const quickNoteContainerRef = useRef(null);
+  const noteModalRef = useRef(null);
   const syncScrollVisuals = useCallback(() => {
     if (!textareaRef.current) return;
     const scrollTop = textareaRef.current.scrollTop;
@@ -903,6 +961,33 @@ const BetterTextPad = () => {
     }
   }, [currentPanel]);
 
+  useEffect(() => {
+    if (isQuickNoteExpanded && quickNoteInputRef.current) {
+      quickNoteInputRef.current.focus();
+    }
+  }, [isQuickNoteExpanded]);
+
+  useEffect(() => {
+    if (!openNoteModalId) return;
+    const handleModalClickOutside = (event) => {
+      if (noteModalRef.current && noteModalRef.current.contains(event.target)) return;
+      setOpenNoteModalId(null);
+    };
+    document.addEventListener('mousedown', handleModalClickOutside);
+    return () => document.removeEventListener('mousedown', handleModalClickOutside);
+  }, [openNoteModalId]);
+
+  useEffect(() => {
+    const handleMoveMenuOutside = (event) => {
+      const target = event.target;
+      if (target?.closest?.('[data-move-menu="true"]')) return;
+      if (target?.closest?.('[data-move-toggle="true"]')) return;
+      if (moveMenuFolderId !== null) setMoveMenuFolderId(null);
+    };
+    document.addEventListener('mousedown', handleMoveMenuOutside);
+    return () => document.removeEventListener('mousedown', handleMoveMenuOutside);
+  }, [moveMenuFolderId]);
+
   // Close context menu when clicking outside
   useEffect(() => {
     const handleClick = () => {
@@ -970,15 +1055,19 @@ const BetterTextPad = () => {
   useEffect(() => {
     if (typeof window === 'undefined' || !window?.localStorage) return;
     try {
-      window.localStorage.setItem('betternotepad-notes-state', JSON.stringify({
-        tabs: notesTabs,
-        activeId: activeNoteTabId,
-        nextId: nextNoteId
+      window.localStorage.setItem('betternotepad-notes-state-v2', JSON.stringify({
+        notes,
+        folders,
+        nextNoteId,
+        nextFolderId,
+        activeFolderId,
+        activeNoteId,
+        viewMode: notesViewMode
       }));
     } catch (error) {
       console.warn('Failed to save notes', error);
     }
-  }, [notesTabs, activeNoteTabId, nextNoteId]);
+  }, [notes, folders, nextNoteId, nextFolderId, activeFolderId, activeNoteId, notesViewMode]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || !window?.localStorage) return;
@@ -2232,28 +2321,235 @@ const BetterTextPad = () => {
     }
   };
 
-  const activeNoteTab = notesTabs.find(tab => tab.id === activeNoteTabId) || notesTabs[0];
   const activeTodoTab = todoTabs.find(tab => tab.id === activeTodoTabId) || todoTabs[0];
 
-  const createNoteTab = () => {
-    const newTab = { id: nextNoteId, title: '', content: '', images: [] };
-    setNotesTabs([...notesTabs, newTab]);
-    setActiveNoteTabId(newTab.id);
-    setNextNoteId(nextNoteId + 1);
+  const folderTree = useMemo(() => {
+    const map = new Map();
+    folders.forEach(folder => {
+      map.set(folder.id, { ...folder, children: [] });
+    });
+    const roots = [];
+    map.forEach(folder => {
+      if (folder.parentId != null && map.has(folder.parentId)) {
+        map.get(folder.parentId).children.push(folder);
+      } else {
+        roots.push(folder);
+      }
+    });
+    const sortTree = (nodes) => nodes
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map(node => ({ ...node, children: sortTree(node.children) }));
+    return sortTree(roots);
+  }, [folders]);
+
+  const getDescendantFolderIds = useCallback((folderId) => {
+    const results = [];
+    const stack = [folderId];
+    while (stack.length) {
+      const current = stack.pop();
+      results.push(current);
+      folders.forEach(folder => {
+        if (folder.parentId === current) {
+          stack.push(folder.id);
+        }
+      });
+    }
+    return results;
+  }, [folders]);
+
+  const isFolderTargetAllowed = useCallback((targetId) => {
+    if (!isFolderDragging) return true;
+    if (dragFolderId === targetId) return false;
+    const blocked = getDescendantFolderIds(dragFolderId);
+    return !blocked.includes(targetId);
+  }, [isFolderDragging, dragFolderId, getDescendantFolderIds]);
+
+  const visibleNotes = useMemo(() => {
+    const filtered = notes.filter(note => !note.archived);
+    if (activeFolderId === null) return filtered;
+    return filtered.filter(note => note.folderId === activeFolderId);
+  }, [notes, activeFolderId]);
+
+  const createFolder = (parentId = null) => {
+    const name = typeof window !== 'undefined' ? window.prompt('Folder name', 'New Folder') : 'New Folder';
+    const safeName = (name || 'New Folder').trim() || 'New Folder';
+    setNextFolderId(prevId => {
+      const newFolder = { id: prevId, parentId: parentId ?? null, name: safeName, expanded: true };
+      setFolders(prev => [...prev, newFolder]);
+      setActiveFolderId(newFolder.id);
+      return prevId + 1;
+    });
   };
 
-  const closeNoteTab = (id) => {
-    if (notesTabs.length === 1) return;
-    const filtered = notesTabs.filter(tab => tab.id !== id);
-    setNotesTabs(filtered);
-    if (activeNoteTabId === id) {
-      setActiveNoteTabId(filtered[0].id);
+  const toggleFolderExpanded = (id) => {
+    setFolders(prev => prev.map(folder => folder.id === id ? { ...folder, expanded: !folder.expanded } : folder));
+  };
+
+  const renameFolder = (id, name) => {
+    const safeName = (name || '').trim();
+    if (!safeName) return;
+    setFolders(prev => prev.map(folder => folder.id === id ? { ...folder, name: safeName } : folder));
+  };
+
+  const createNote = (folderId = activeFolderId ?? null, overrides = {}) => {
+    let createdId = null;
+    setNextNoteId(prevId => {
+      const now = Date.now();
+      const newNote = {
+        id: prevId,
+        folderId: folderId ?? null,
+        title: overrides.title ?? '',
+        content: overrides.content ?? '',
+        images: overrides.images ?? [],
+        archived: overrides.archived ?? false,
+        createdAt: now,
+        updatedAt: now
+      };
+      createdId = newNote.id;
+      setNotes(prev => [...prev, newNote]);
+      setActiveNoteId(newNote.id);
+      setActiveFolderId(folderId ?? null);
+      return prevId + 1;
+    });
+    return createdId;
+  };
+
+  const updateNote = (id, updates) => {
+    setNotes(prev => prev.map(note => note.id === id ? { ...note, ...updates, updatedAt: Date.now() } : note));
+  };
+
+  const removeNote = (id) => {
+    setNotes(prev => prev.filter(note => note.id !== id));
+    setActiveNoteId(current => current === id ? null : current);
+  };
+
+  const archiveNote = (id) => {
+    setNotes(prev => prev.map(note => note.id === id ? { ...note, archived: true, updatedAt: Date.now() } : note));
+    if (activeNoteId === id) {
+      setActiveNoteId(null);
     }
   };
 
-  const updateNoteTab = (id, updates) => {
-    setNotesTabs(tabs => tabs.map(tab => tab.id === id ? { ...tab, ...updates } : tab));
+  const deleteFolder = (id) => {
+    const targets = getDescendantFolderIds(id);
+    const notesInFolder = notes.filter(note => targets.includes(note.folderId));
+    if (notesInFolder.length > 0) {
+      const ok = typeof window === 'undefined' ? true : window.confirm('This folder contains notes. Delete it and move notes to root?');
+      if (!ok) return;
+    }
+    setFolders(prev => prev.filter(folder => !targets.includes(folder.id)));
+    setNotes(prev => prev.map(note => targets.includes(note.folderId) ? { ...note, folderId: null } : note));
+    if (targets.includes(activeFolderId)) {
+      setActiveFolderId(null);
+    }
   };
+
+  const moveFolderToTarget = (id, targetId) => {
+    const folder = folders.find(f => f.id === id);
+    if (!folder) return;
+    if (targetId === id) return;
+    if (targetId !== null && !folders.find(f => f.id === targetId)) return;
+    const blocked = getDescendantFolderIds(id);
+    if (targetId !== null && blocked.includes(targetId)) return;
+    setFolders(prev => prev.map(f => f.id === id ? { ...f, parentId: targetId } : f));
+    setMoveMenuFolderId(null);
+  };
+
+  const moveNoteToFolder = (noteId, targetId) => {
+    const note = notes.find(n => n.id === noteId);
+    if (!note) return;
+    updateNote(noteId, { folderId: targetId ?? null });
+    setDragNoteId(null);
+    setDragOverNoteFolderId(null);
+  };
+
+  const handleFolderDragStart = (id) => {
+    setDragFolderId(id);
+  };
+
+  const handleFolderDragEnd = () => {
+    setDragFolderId(null);
+    setDragOverFolderId(null);
+  };
+
+  const handleFolderDragOver = (event, targetId) => {
+    // Note dragging
+    if (dragNoteId !== null) {
+      event.preventDefault();
+      setDragOverNoteFolderId(targetId);
+      return;
+    }
+    // Folder dragging
+    if (dragFolderId === null) return;
+    if (!isFolderTargetAllowed(targetId)) return;
+    event.preventDefault();
+    setDragOverFolderId(targetId);
+  };
+
+  const handleFolderDrop = (targetId) => {
+    if (dragNoteId !== null) {
+      moveNoteToFolder(dragNoteId, targetId);
+      return;
+    }
+    if (dragFolderId === null) return;
+    if (!isFolderTargetAllowed(targetId)) return;
+    moveFolderToTarget(dragFolderId, targetId);
+    handleFolderDragEnd();
+  };
+
+  const handleNoteDragStart = (noteId, event) => {
+    setDragNoteId(noteId);
+    if (noteDragPreviewRef.current) {
+      noteDragPreviewRef.current.remove();
+      noteDragPreviewRef.current = null;
+    }
+    if (event?.dataTransfer) {
+      event.dataTransfer.effectAllowed = 'move';
+      const preview = document.createElement('div');
+      preview.textContent = '≡';
+      preview.style.position = 'absolute';
+      preview.style.top = '-1000px';
+      preview.style.left = '-1000px';
+      preview.style.fontSize = '18px';
+      preview.style.padding = '4px 6px';
+      preview.style.background = '#111827';
+      preview.style.color = '#86efac';
+      preview.style.border = '1px solid #22c55e';
+      preview.style.borderRadius = '6px';
+      preview.style.boxShadow = '0 8px 18px rgba(0,0,0,0.4)';
+      document.body.appendChild(preview);
+      noteDragPreviewRef.current = preview;
+      event.dataTransfer.setDragImage(preview, 8, 8);
+    }
+  };
+
+  const handleNoteDragEnd = () => {
+    setDragNoteId(null);
+    setDragOverNoteFolderId(null);
+    if (noteDragPreviewRef.current) {
+      noteDragPreviewRef.current.remove();
+      noteDragPreviewRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    // Only set a default active note when no folder is selected
+    if (activeFolderId !== null) return;
+    if (!activeNoteId && notes.length > 0) {
+      setActiveNoteId(notes[0].id);
+    }
+  }, [activeNoteId, notes, activeFolderId]);
+
+  useEffect(() => {
+    if (activeFolderId === null) return;
+    const inFolder = notes.filter(note => note.folderId === activeFolderId);
+    if (inFolder.length === 0) {
+      return;
+    }
+    if (!inFolder.find(note => note.id === activeNoteId)) {
+      setActiveNoteId(inFolder[0].id);
+    }
+  }, [activeFolderId, notes, activeNoteId]);
 
   const createTodoTab = () => {
     const newTab = { id: nextTodoId, title: `List ${nextTodoId}`, items: [] };
@@ -2275,12 +2571,62 @@ const BetterTextPad = () => {
     setTodoTabs(tabs => tabs.map(tab => tab.id === id ? updater(tab) : tab));
   };
 
-  const addImageAttachmentFromDataURL = (dataUrl) => {
-    if (!activeNoteTab || !dataUrl) return;
-    updateNoteTab(activeNoteTab.id, {
-      images: [...activeNoteTab.images, { id: Date.now(), url: dataUrl }]
+  const finishQuickNote = useCallback((event = null) => {
+    if (event) event.preventDefault();
+    const title = quickNoteTitle.trim();
+    const body = quickNoteText.trim();
+    const hasImages = quickNoteImages.length > 0;
+    if (!title && !body && !hasImages) {
+      setQuickNoteTitle('');
+      setQuickNoteText('');
+      setQuickNoteImages([]);
+      setIsQuickNoteExpanded(false);
+      return;
+    }
+    const derivedTitle = title || body.split(/\s+/).slice(0, 8).join(' ').trim() || 'Untitled note';
+    const escapedBody = escapeHtml(body).replace(/\n/g, '<br/>');
+    const htmlBody = linkifyHtml(escapedBody);
+    createNote(activeFolderId ?? null, {
+      title: derivedTitle,
+      content: htmlBody,
+      images: quickNoteImages
     });
+    setQuickNoteTitle('');
+    setQuickNoteText('');
+    setQuickNoteImages([]);
+    setIsQuickNoteExpanded(false);
+  }, [quickNoteTitle, quickNoteText, quickNoteImages, activeFolderId, createNote]);
+
+  const handleQuickNotePaste = (event) => {
+    const items = event.clipboardData?.items;
+    if (!items) return;
+    let handledImage = false;
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        const file = item.getAsFile();
+        if (!file) continue;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          setQuickNoteImages(prev => [...prev, { id: Date.now() + Math.random(), url: e.target?.result }]);
+        };
+        reader.readAsDataURL(file);
+        handledImage = true;
+      }
+    }
+    if (handledImage) {
+      event.preventDefault();
+    }
   };
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (!isQuickNoteExpanded) return;
+      if (quickNoteContainerRef.current && quickNoteContainerRef.current.contains(event.target)) return;
+      finishQuickNote();
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isQuickNoteExpanded, finishQuickNote]);
 
   const addTodoItem = () => {
     if (!activeTodoTab) return;
@@ -2699,110 +3045,371 @@ const BetterTextPad = () => {
   }, [braceMatch]);
 
   const renderNotesPanel = () => {
-    if (!activeNoteTab) return null;
     const sidebarStyle = { width: `${Math.round(notesSidebarWidth)}px` };
-    return (
-    <div className="flex h-full group/notes">
-      <div className="border-r border-gray-800 flex flex-col" style={sidebarStyle}>
-        <div className="px-4 py-3 border-b border-gray-800">
-          <div className="flex items-center justify-between">
-            <div className="flex flex-col">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-indigo-400">BETTER TEXT PAD</span>
-                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300">BETA</span>
-              </div>
-              <div className="text-sm font-medium text-gray-300">Notes</div>
-            </div>
-            <button onClick={createNoteTab} className="flex items-center gap-1 text-sm text-indigo-400 hover:text-indigo-200" title="Create New Note">
-              <Plus className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-        <div className="flex-1 overflow-y-auto" onDoubleClick={(e) => { if (!e.target.closest('[data-note-card]')) createNoteTab(); }}>
-          {notesTabs.map(tab => {
-            const fallbackTitle = stripHtml(tab.content || '').split(/\s+/).slice(0, 5).join(' ').trim();
-            const previewText = stripHtml(tab.content || tab.title || '').slice(0, 80) || 'Untitled';
-            return (
-              <div
-                key={tab.id}
-                data-note-card
-                className={`px-4 py-3 border-b border-gray-800 cursor-pointer ${tab.id === activeNoteTabId ? 'bg-gray-900 text-white' : 'text-gray-400 hover:bg-gray-900 hover:text-white'}`}
-                onClick={() => setActiveNoteTabId(tab.id)}
+    const modalNote = openNoteModalId ? notes.find(note => note.id === openNoteModalId) : null;
+
+    const renderFolderNode = (folder, depth = 0) => {
+      const isExpanded = folder.expanded !== false;
+      const hasChildren = Array.isArray(folder.children) && folder.children.length > 0;
+      const isInvalidTarget = isFolderDragging && !isFolderTargetAllowed(folder.id);
+      return (
+        <div key={folder.id} className="space-y-1">
+          <div
+            className={`relative flex items-center justify-between gap-2 px-3 py-2 rounded cursor-pointer ${folder.id === activeFolderId ? 'bg-gray-900 text-white' : 'text-gray-300 hover:bg-gray-900/60'} ${dragOverFolderId === folder.id || dragOverNoteFolderId === folder.id ? 'border border-indigo-500' : 'border border-transparent'} ${isInvalidTarget ? 'cursor-not-allowed opacity-50' : ''}`}
+            onClick={() => setActiveFolderId(folder.id)}
+            onDragOver={(event) => handleFolderDragOver(event, folder.id)}
+            onDrop={() => handleFolderDrop(folder.id)}
+          >
+            <div className="flex items-center gap-2 flex-1 min-w-0" style={{ paddingLeft: depth * 12 }}>
+              <button
+                type="button"
+                className="p-1 rounded hover:bg-gray-800"
+                onClick={(event) => { event.stopPropagation(); toggleFolderExpanded(folder.id); }}
+                aria-label={isExpanded ? 'Collapse folder' : 'Expand folder'}
               >
-                <div className="flex items-center justify-between gap-2">
-                  <div>
-                    <p className="font-semibold text-sm">{tab.title?.trim() || fallbackTitle || 'Untitled'}</p>
-                    <p className="text-xs text-gray-500 line-clamp-2">{previewText}</p>
-                  </div>
-                  {notesTabs.length > 1 && (
-                    <button onClick={(e) => { e.stopPropagation(); closeNoteTab(tab.id); }} className="text-red-400">
-                      <X className="w-3 h-3" />
-                    </button>
-                  )}
-                </div>
+                {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+              </button>
+              {isExpanded ? <FolderOpen className="w-4 h-4 text-indigo-400" /> : <Folder className="w-4 h-4 text-indigo-400" />}
+              <span className="text-sm font-medium truncate">{folder.name}</span>
+            </div>
+            <div className="flex items-center gap-1 opacity-80">
+              <button
+                type="button"
+                className="p-1 rounded hover:bg-gray-800"
+                title="New subfolder"
+                onClick={(event) => { event.stopPropagation(); createFolder(folder.id); }}
+              >
+                <FolderPlus className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                className="p-1 rounded hover:bg-gray-800"
+                title="Rename folder"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  const name = typeof window !== 'undefined' ? window.prompt('Rename folder', folder.name) : folder.name;
+                  renameFolder(folder.id, name);
+                }}
+              >
+                <Edit2 className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                className="p-1 rounded hover:bg-gray-800"
+                title="Move folder"
+                data-move-toggle="true"
+                draggable
+                onDragStart={() => handleFolderDragStart(folder.id)}
+                onDragEnd={handleFolderDragEnd}
+                onClick={(event) => { event.stopPropagation(); setMoveMenuFolderId(prev => prev === folder.id ? null : folder.id); }}
+              >
+                <GripVertical className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                className="p-1 rounded hover:bg-gray-800 text-red-400"
+                title="Delete folder"
+                onClick={(event) => { event.stopPropagation(); deleteFolder(folder.id); }}
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
+            {isNoteDragging && dragOverNoteFolderId === folder.id && (
+              <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 bg-green-600/80 text-white text-xs font-semibold px-2 py-1 rounded-full shadow-lg">
+                <Plus className="w-3 h-3" />
+                <span>Move here</span>
               </div>
-            );
-          })}
+            )}
+          </div>
+          {moveMenuFolderId === folder.id && (
+            <div className="pl-8 pr-3 pb-2" data-move-menu="true">
+              <div className="text-[11px] text-gray-500 mb-1">Move “{folder.name}” to:</div>
+              <select
+                className="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1 text-sm text-gray-200"
+                value={folder.parentId ?? ''}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  const targetId = value === '' ? null : Number(value);
+                  moveFolderToTarget(folder.id, targetId);
+                }}
+              >
+                <option value="">Root</option>
+                {folders
+                  .filter(f => f.id !== folder.id && !getDescendantFolderIds(folder.id).includes(f.id))
+                  .sort((a, b) => a.name.localeCompare(b.name))
+                  .map(f => (
+                    <option key={f.id} value={f.id}>{f.name}</option>
+                  ))}
+              </select>
+            </div>
+          )}
+          {isExpanded && hasChildren && (
+            <div className="space-y-1">
+              {folder.children.map(child => renderFolderNode(child, depth + 1))}
+            </div>
+          )}
         </div>
-      </div>
-      <button
-        type="button"
-        className="w-2 bg-gray-900/80 hover:bg-indigo-500 cursor-col-resize transition-colors flex items-center justify-center rounded-md border border-gray-800"
-        role="separator"
-        aria-orientation="vertical"
-        aria-label="Resize notes panel"
-        onMouseDown={handleNotesResizeStart}
-      >
-        <span className="h-8 w-0.5 bg-gray-500 rounded-full" />
-      </button>
-      <div className="flex-1 flex flex-col">
-      <div className="px-6 py-4 border-b border-gray-800 space-y-3">
-        <input
-          type="text"
-          value={activeNoteTab.title}
-          onChange={(e) => updateNoteTab(activeNoteTab.id, { title: e.target.value })}
-          placeholder="Title"
-          className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2" dir="ltr" />
-        <RichTextEditor
-          value={activeNoteTab.content}
-          onChange={(value) => updateNoteTab(activeNoteTab.id, { content: value })}
-        />
-      </div>
-      <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6" onPaste={(event) => {
-        const items = event.clipboardData?.items;
-        if (!items) return;
-        for (const item of items) {
-          if (item.type.startsWith('image/')) {
-            const file = item.getAsFile();
-            if (!file) continue;
-            const reader = new FileReader();
-            reader.onload = (e) => {
-              addImageAttachmentFromDataURL(e.target?.result);
-            };
-            reader.readAsDataURL(file);
-            event.preventDefault();
-          }
-        }
-      }}>
-        <div>
-          <div className="grid grid-cols-2 gap-3">
-            {activeNoteTab?.images?.map(img => (
-              <div key={img.id} className="bg-gray-800 rounded border border-gray-700 p-2">
-                <img src={img.url} alt="attachment" className="w-full h-32 object-cover rounded" />
-                <a href={img.url} target="_blank" rel="noreferrer" className="text-xs text-blue-400 block mt-1 truncate">
-                  {img.url}
-                </a>
+      );
+    };
+
+    const activeFolderName = activeFolderId === null
+      ? 'All Notes'
+      : (folders.find(folder => folder.id === activeFolderId)?.name || 'Notes');
+
+    return (
+      <>
+      <div className="flex h-full group/notes">
+        <div className="border-r border-gray-800 flex flex-col" style={sidebarStyle}>
+          <div className="px-4 py-3 border-b border-gray-800">
+            <div className="flex items-center justify-between">
+              <div className="flex flex-col">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-indigo-400">BETTER TEXT PAD</span>
+                  <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300">BETA</span>
+                </div>
+                <div className="text-sm font-medium text-gray-300">Notes</div>
               </div>
-            ))}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => createFolder(activeFolderId ?? null)}
+                  className="flex items-center gap-1 text-sm text-indigo-400 hover:text-indigo-200"
+                  title="Create Folder"
+                >
+                  <FolderPlus className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => createNote(activeFolderId ?? null)}
+                  className="flex items-center gap-1 text-sm text-indigo-400 hover:text-indigo-200"
+                  title="Create Note"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+          <div className="flex-1 overflow-y-auto">
+          <div
+            className={`relative px-3 py-2 rounded cursor-pointer ${activeFolderId === null ? 'bg-gray-900 text-white' : 'text-gray-300 hover:bg-gray-900/60'} ${dragOverNoteFolderId === null && dragNoteId !== null ? 'border border-indigo-500' : 'border border-transparent'} ${isFolderDragging && !isFolderTargetAllowed(null) ? 'cursor-not-allowed opacity-50' : ''}`}
+            onClick={() => setActiveFolderId(null)}
+            onDragOver={(event) => handleFolderDragOver(event, null)}
+            onDrop={() => handleFolderDrop(null)}
+          >
+            <div className="flex items-center gap-2">
+              <FolderOpen className="w-4 h-4 text-indigo-400" />
+              <span className="text-sm font-medium">All Notes</span>
+            </div>
+            {isNoteDragging && dragOverNoteFolderId === null && (
+              <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 bg-green-600/80 text-white text-xs font-semibold px-2 py-1 rounded-full shadow-lg">
+                <Plus className="w-3 h-3" />
+                <span>Move here</span>
+              </div>
+            )}
+          </div>
+            <div className="mt-2 space-y-1">
+              {folderTree.length === 0 && (
+                <div className="text-xs text-gray-500 px-3 py-2">No folders yet. Create one to get started.</div>
+              )}
+              {folderTree.map(folder => renderFolderNode(folder))}
+            </div>
           </div>
         </div>
-        <div>
-          <p className="text-xs text-gray-500">Paste images directly into the editor area to attach them. URLs typed in the editor become clickable links automatically.</p>
+        <button
+          type="button"
+          className="w-2 bg-gray-900/80 hover:bg-indigo-500 cursor-col-resize transition-colors flex items-center justify-center rounded-md border border-gray-800"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize notes panel"
+          onMouseDown={handleNotesResizeStart}
+        >
+          <span className="h-8 w-0.5 bg-gray-500 rounded-full" />
+        </button>
+        <div className="flex-1 flex flex-col">
+          <div className="px-6 py-4 border-b border-gray-800 flex items-center justify-between">
+            <div>
+              <div className="text-sm font-semibold text-white">{activeFolderName}</div>
+              <div className="text-xs text-gray-500">{visibleNotes.length} note{visibleNotes.length === 1 ? '' : 's'}</div>
+            </div>
+          </div>
+          <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+            <div
+              ref={quickNoteContainerRef}
+              className="bg-gray-900 border border-dashed border-gray-700 rounded-lg p-3 space-y-2"
+              onPaste={handleQuickNotePaste}
+              onDragOver={(event) => handleFolderDragOver(event, null)}
+              onDrop={() => handleFolderDrop(null)}
+            >
+              {isQuickNoteExpanded ? (
+                <form className="space-y-2" onSubmit={finishQuickNote}>
+                  <input
+                    ref={quickNoteInputRef}
+                    value={quickNoteTitle}
+                    onChange={(e) => setQuickNoteTitle(e.target.value)}
+                    className="w-full bg-transparent text-sm text-gray-200 focus:outline-none border-b border-gray-700 pb-1"
+                    placeholder="Title"
+                  />
+                  <textarea
+                    value={quickNoteText}
+                    onChange={(e) => setQuickNoteText(e.target.value)}
+                    className="w-full bg-transparent text-sm text-gray-200 focus:outline-none resize-none min-h-[100px]"
+                    placeholder="Take a note..."
+                  />
+                  {quickNoteImages.length > 0 && (
+                    <div className="grid grid-cols-2 gap-2">
+                      {quickNoteImages.map(img => (
+                        <div key={img.id} className="bg-gray-800 border border-gray-700 rounded p-1">
+                          <img src={img.url} alt="attachment" className="w-full h-24 object-cover rounded" />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <p className="text-[11px] text-gray-500 pt-1">Click away to save automatically. Paste images or URLs here.</p>
+                </form>
+              ) : (
+                <button
+                  className="w-full text-left text-sm text-gray-400 hover:text-white flex items-center gap-2"
+                  onClick={() => setIsQuickNoteExpanded(true)}
+                >
+                  <Plus className="w-4 h-4" />
+                  Take a note
+                </button>
+              )}
+            </div>
+            {visibleNotes.length === 0 ? (
+              <div className="h-full border border-dashed border-gray-700 rounded-lg flex items-center justify-center text-sm text-gray-500">
+                No notes in this folder yet. Create one to start writing.
+              </div>
+            ) : (
+              <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+                {visibleNotes.map(note => {
+                  const previewText = stripHtml(note.content || note.title || '').slice(0, 180) || 'Untitled';
+                  const firstImage = note.images?.[0];
+                  return (
+                    <div
+                      key={note.id}
+                      className="bg-gray-900 border border-gray-800 hover:border-indigo-500 rounded-lg overflow-hidden h-56 flex flex-col cursor-pointer transition-colors"
+                      onClick={() => { setActiveNoteId(note.id); setOpenNoteModalId(note.id); }}
+                    >
+                      <div className="relative h-24 bg-gray-800">
+                        {firstImage ? (
+                          <img src={firstImage.url} alt="note" className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="h-full w-full flex items-center justify-center text-xs text-gray-500">No image</div>
+                        )}
+                        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent px-3 py-2 flex items-center justify-between">
+                          <span className="text-white text-sm font-semibold truncate">{note.title?.trim() || 'Untitled note'}</span>
+                          <span className="text-[10px] text-gray-200">{note.images?.length || 0} img</span>
+                        </div>
+                      </div>
+                      <div className="flex-1 flex flex-col p-3 gap-2">
+                        <p className="text-xs text-gray-400 line-clamp-3 leading-relaxed">{previewText}</p>
+                        <div className="flex items-center justify-between text-[10px] text-gray-500 mt-auto pt-1">
+                          <span>{new Date(note.updatedAt || note.createdAt).toLocaleDateString()}</span>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              className="p-1 rounded hover:bg-gray-800"
+                              draggable
+                              onDragStart={(event) => handleNoteDragStart(note.id, event)}
+                              onDragEnd={handleNoteDragEnd}
+                              title="Drag to folder"
+                              onClick={(event) => event.stopPropagation()}
+                            >
+                              <GripVertical className="w-4 h-4 text-indigo-300" />
+                            </button>
+                            <button
+                              className="text-indigo-400 hover:text-indigo-200"
+                              onClick={(event) => { event.stopPropagation(); setActiveNoteId(note.id); setOpenNoteModalId(note.id); }}
+                            >
+                              Edit
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
       </div>
-      </div>
-    </div>
-  );
+      {modalNote && (
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center px-4">
+          <div
+            ref={noteModalRef}
+            className="bg-gray-900 border border-gray-800 rounded-lg shadow-2xl max-w-4xl w-full max-h-[85vh] overflow-y-auto"
+            onPaste={(event) => {
+              const items = event.clipboardData?.items;
+              if (!items) return;
+              for (const item of items) {
+                if (item.type.startsWith('image/')) {
+                  const file = item.getAsFile();
+                  if (!file) continue;
+                  const reader = new FileReader();
+                  reader.onload = (e) => {
+                    updateNote(modalNote.id, {
+                      images: [...(modalNote.images || []), { id: Date.now(), url: e.target?.result }]
+                    });
+                  };
+                  reader.readAsDataURL(file);
+                  event.preventDefault();
+                }
+              }
+            }}
+          >
+            <div className="flex items-start justify-between px-5 py-4 border-b border-gray-800 gap-3">
+              <div className="flex-1 space-y-2">
+                <input
+                  className="w-full bg-transparent text-lg font-semibold text-white focus:outline-none border-b border-gray-800 pb-1"
+                  value={modalNote.title}
+                  onChange={(e) => updateNote(modalNote.id, { title: e.target.value })}
+                  placeholder="Untitled note"
+                />
+                <div className="text-xs text-gray-500">{modalNote.images?.length || 0} attachment(s)</div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  className="text-xs text-yellow-300 hover:text-yellow-200 border border-yellow-500/60 px-2 py-1 rounded"
+                  onClick={() => { archiveNote(modalNote.id); setOpenNoteModalId(null); }}
+                >
+                  Archive
+                </button>
+                <button
+                  className="text-xs text-red-300 hover:text-red-200 border border-red-500/60 px-2 py-1 rounded"
+                  onClick={() => { removeNote(modalNote.id); setOpenNoteModalId(null); }}
+                >
+                  Delete
+                </button>
+                <button onClick={() => setOpenNoteModalId(null)} className="text-gray-400 hover:text-white">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+            <div className="px-5 py-4 space-y-4">
+              <RichTextEditor
+                value={modalNote.content}
+                onChange={(value) => updateNote(modalNote.id, { content: value })}
+              />
+              {modalNote.images?.length ? (
+                <div className="grid grid-cols-2 gap-3">
+                  {modalNote.images.map(img => (
+                    <div key={img.id} className="bg-gray-800 rounded border border-gray-700 p-2">
+                      <img src={img.url} alt="attachment" className="w-full h-40 object-cover rounded" />
+                      <a href={img.url} target="_blank" rel="noreferrer" className="text-xs text-blue-400 block mt-1 truncate">
+                        {img.url}
+                      </a>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-xs text-gray-500">No images attached. Paste an image into this window to attach.</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+      </>
+    );
   };
 
   const renderTodoPanel = () => {
