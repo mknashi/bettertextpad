@@ -1,0 +1,516 @@
+import { invoke } from '@tauri-apps/api/core';
+import { AI_PROVIDERS, GROQ_MODELS, OPENAI_MODELS, CLAUDE_MODELS } from './AIService.js';
+
+/**
+ * Desktop AI Service supporting both Ollama (local) and cloud providers
+ */
+
+// Available Ollama models for desktop
+export const OLLAMA_MODELS = {
+  'llama3.1:8b': {
+    id: 'llama3.1:8b',
+    name: 'Llama 3.1 8B',
+    size: '4.7 GB',
+    speed: 'Fast',
+    description: 'Best for large files (128K context)'
+  },
+  'qwen2.5-coder:7b': {
+    id: 'qwen2.5-coder:7b',
+    name: 'Qwen2.5 Coder 7B',
+    size: '4.7 GB',
+    speed: 'Medium',
+    description: 'High quality code generation'
+  },
+  'qwen2.5-coder:3b': {
+    id: 'qwen2.5-coder:3b',
+    name: 'Qwen2.5 Coder 3B',
+    size: '2 GB',
+    speed: 'Fast',
+    description: 'Balanced performance'
+  },
+  'qwen2.5-coder:1.5b': {
+    id: 'qwen2.5-coder:1.5b',
+    name: 'Qwen2.5 Coder 1.5B',
+    size: '1 GB',
+    speed: 'Very Fast',
+    description: 'Fast, small files only'
+  },
+  'deepseek-r1:8b': {
+    id: 'deepseek-r1:8b',
+    name: 'DeepSeek R1 8B',
+    size: '4.9 GB',
+    speed: 'Medium',
+    description: 'Reasoning model (not for large files)'
+  },
+  'codellama:7b': {
+    id: 'codellama:7b',
+    name: 'CodeLlama 7B',
+    size: '3.8 GB',
+    speed: 'Medium',
+    description: 'Meta\'s code model'
+  },
+  'llama3.2:3b': {
+    id: 'llama3.2:3b',
+    name: 'Llama 3.2 3B',
+    size: '2 GB',
+    speed: 'Fast',
+    description: 'General purpose'
+  }
+};
+
+export { GROQ_MODELS, OPENAI_MODELS, CLAUDE_MODELS };
+
+export class DesktopAIService {
+  constructor() {
+    this.ollamaAvailable = null;
+    this.availableModels = [];
+  }
+
+  /**
+   * Check if Ollama is installed and running
+   */
+  async checkOllamaStatus() {
+    try {
+      const status = await invoke('check_ollama_status');
+      this.ollamaAvailable = status.available;
+      this.availableModels = status.models || [];
+      return status;
+    } catch (error) {
+      console.error('Failed to check Ollama status:', error);
+      return {
+        available: false,
+        error: error.toString(),
+        models: []
+      };
+    }
+  }
+
+  /**
+   * Check if a specific model is available locally
+   */
+  async isModelAvailable(modelId) {
+    try {
+      return await invoke('check_model_available', { model: modelId });
+    } catch (error) {
+      console.error(`Failed to check model ${modelId}:`, error);
+      return false;
+    }
+  }
+
+  /**
+   * Pull/download an Ollama model
+   */
+  async pullModel(modelId, onProgress) {
+    try {
+      if (onProgress) {
+        onProgress({
+          progress: 0,
+          text: `Downloading ${modelId}...`,
+          timeElapsed: 0
+        });
+      }
+
+      const result = await invoke('pull_ollama_model', { model: modelId });
+
+      if (onProgress) {
+        onProgress({
+          progress: 100,
+          text: 'Model downloaded successfully',
+          timeElapsed: 0
+        });
+      }
+
+      return result;
+    } catch (error) {
+      throw new Error(`Failed to pull model: ${error}`);
+    }
+  }
+
+  /**
+   * Get list of downloaded models
+   */
+  async getDownloadedModels() {
+    const status = await this.checkOllamaStatus();
+    return status.models || [];
+  }
+
+  /**
+   * Build prompt for fixing errors
+   */
+  buildFixPrompt(content, errorDetails) {
+    const errorList = errorDetails.allErrors
+      ?.map(e => `Line ${e.line}: ${e.message}`)
+      .join('\n') || errorDetails.message;
+
+    return `You are a ${errorDetails.type} syntax error fixer. Your task is to fix ONLY the syntax errors in the provided content.
+
+Errors found:
+${errorList}
+
+Content to fix:
+${content}
+
+Instructions:
+1. Fix ONLY the syntax errors listed above
+2. Preserve all data and structure
+3. Do not add explanations or comments
+4. Return ONLY the complete corrected ${errorDetails.type}
+5. Ensure the output is valid ${errorDetails.type}
+
+Fixed ${errorDetails.type}:`;
+  }
+
+  /**
+   * Fix with Ollama (local)
+   */
+  async fixWithOllama(content, errorDetails, modelId, onProgress) {
+    // Check if model is available
+    const isAvailable = await this.isModelAvailable(modelId);
+    if (!isAvailable) {
+      throw new Error(
+        `Model ${modelId} not found. Please download it first from AI Settings.`
+      );
+    }
+
+    try {
+      if (onProgress) {
+        onProgress({
+          progress: 50,
+          text: 'Processing with Ollama...',
+          timeElapsed: 0
+        });
+      }
+
+      // Invoke Rust backend to fix with Ollama
+      const fixed = await invoke('fix_with_ollama', {
+        content,
+        errorDetails: JSON.stringify(errorDetails),
+        model: modelId
+      });
+
+      if (onProgress) {
+        onProgress({
+          progress: 100,
+          text: 'Fixed successfully',
+          timeElapsed: 0
+        });
+      }
+
+      return fixed.trim();
+    } catch (error) {
+      throw new Error(`Ollama fix failed: ${error}`);
+    }
+  }
+
+  /**
+   * Extract complete JSON/XML content intelligently
+   */
+  extractContent(text, errorType) {
+    const trimmed = text.trim();
+
+    if (errorType === 'JSON') {
+      // Find first { or [
+      const startMatch = trimmed.match(/[{\[]/);
+      if (!startMatch) return trimmed;
+
+      const startIdx = startMatch.index;
+      const startChar = startMatch[0];
+      const endChar = startChar === '{' ? '}' : ']';
+
+      // Find matching closing brace
+      let depth = 0;
+      let endIdx = startIdx;
+      for (let i = startIdx; i < trimmed.length; i++) {
+        if (trimmed[i] === startChar) depth++;
+        else if (trimmed[i] === endChar) {
+          depth--;
+          if (depth === 0) {
+            endIdx = i + 1;
+            break;
+          }
+        }
+      }
+
+      if (endIdx > startIdx) {
+        return trimmed.substring(startIdx, endIdx);
+      }
+    } else if (errorType === 'XML') {
+      // For XML, find first < and last >
+      const firstTag = trimmed.indexOf('<');
+      const lastTag = trimmed.lastIndexOf('>');
+      if (firstTag !== -1 && lastTag !== -1 && lastTag > firstTag) {
+        return trimmed.substring(firstTag, lastTag + 1);
+      }
+    }
+
+    return trimmed;
+  }
+
+  /**
+   * Fix with Groq API
+   */
+  async fixWithGroq(content, errorDetails, apiKey, model) {
+    if (!apiKey) {
+      throw new Error('Groq API key is required');
+    }
+
+    const prompt = this.buildFixPrompt(content, errorDetails);
+
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          {
+            role: 'system',
+            content: `You are a ${errorDetails.type} syntax error fixing assistant. Only output valid ${errorDetails.type}, nothing else.`
+          },
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
+        temperature: 0.1,
+        max_tokens: 16000
+      })
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: { message: 'Unknown error' } }));
+      throw new Error(error.error?.message || `Groq API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    let fixed = data.choices[0]?.message?.content || '';
+
+    // Remove markdown code block markers but preserve content
+    if (fixed.includes('```')) {
+      const lines = fixed.split('\n');
+      const codeLines = [];
+      let inCodeBlock = false;
+
+      for (const line of lines) {
+        if (line.trim().startsWith('```')) {
+          inCodeBlock = !inCodeBlock;
+        } else if (inCodeBlock) {
+          codeLines.push(line);
+        }
+      }
+
+      if (codeLines.length > 0) {
+        fixed = codeLines.join('\n');
+      } else {
+        fixed = lines.filter(line => !line.trim().startsWith('```')).join('\n');
+      }
+    }
+
+    // Extract complete JSON/XML content
+    fixed = this.extractContent(fixed, errorDetails.type);
+
+    return fixed.trim();
+  }
+
+  /**
+   * Fix with OpenAI API
+   */
+  async fixWithOpenAI(content, errorDetails, apiKey, model) {
+    if (!apiKey) {
+      throw new Error('OpenAI API key is required');
+    }
+
+    const prompt = this.buildFixPrompt(content, errorDetails);
+
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          {
+            role: 'system',
+            content: `You are a ${errorDetails.type} syntax error fixing assistant. Only output valid ${errorDetails.type}, nothing else.`
+          },
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
+        temperature: 0.1,
+        max_tokens: 16000
+      })
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: { message: 'Unknown error' } }));
+      throw new Error(error.error?.message || `OpenAI API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    let fixed = data.choices[0]?.message?.content || '';
+
+    // Remove markdown code block markers but preserve content
+    if (fixed.includes('```')) {
+      const lines = fixed.split('\n');
+      const codeLines = [];
+      let inCodeBlock = false;
+
+      for (const line of lines) {
+        if (line.trim().startsWith('```')) {
+          inCodeBlock = !inCodeBlock;
+        } else if (inCodeBlock) {
+          codeLines.push(line);
+        }
+      }
+
+      if (codeLines.length > 0) {
+        fixed = codeLines.join('\n');
+      } else {
+        fixed = lines.filter(line => !line.trim().startsWith('```')).join('\n');
+      }
+    }
+
+    // Extract complete JSON/XML content
+    fixed = this.extractContent(fixed, errorDetails.type);
+
+    return fixed.trim();
+  }
+
+  /**
+   * Fix with Claude API
+   */
+  async fixWithClaude(content, errorDetails, apiKey, model) {
+    if (!apiKey) {
+      throw new Error('Claude API key is required');
+    }
+
+    const prompt = this.buildFixPrompt(content, errorDetails);
+
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: 16000,
+        system: `You are a ${errorDetails.type} syntax error fixing assistant. Only output valid ${errorDetails.type}, nothing else.`,
+        messages: [
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
+        temperature: 0.1
+      })
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: { message: 'Unknown error' } }));
+      throw new Error(error.error?.message || `Claude API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    let fixed = data.content[0]?.text || '';
+
+    // Remove markdown code block markers but preserve content
+    if (fixed.includes('```')) {
+      const lines = fixed.split('\n');
+      const codeLines = [];
+      let inCodeBlock = false;
+
+      for (const line of lines) {
+        if (line.trim().startsWith('```')) {
+          inCodeBlock = !inCodeBlock;
+        } else if (inCodeBlock) {
+          codeLines.push(line);
+        }
+      }
+
+      if (codeLines.length > 0) {
+        fixed = codeLines.join('\n');
+      } else {
+        fixed = lines.filter(line => !line.trim().startsWith('```')).join('\n');
+      }
+    }
+
+    // Extract complete JSON/XML content
+    fixed = this.extractContent(fixed, errorDetails.type);
+
+    return fixed.trim();
+  }
+
+  /**
+   * Main fix function - routes to appropriate provider
+   */
+  async fix(content, errorDetails, settings, onProgress) {
+    const { provider, ollamaModel, groqApiKey, groqModel, openaiApiKey, openaiModel, claudeApiKey, claudeModel } = settings;
+
+    try {
+      // Ollama (local) mode
+      if (provider === 'ollama') {
+        const modelId = ollamaModel || 'deepseek-r1:8b';
+        return await this.fixWithOllama(content, errorDetails, modelId, onProgress);
+      }
+
+      if (onProgress) {
+        onProgress({
+          progress: 50,
+          text: 'Processing with AI...',
+          timeElapsed: 0
+        });
+      }
+
+      // Groq mode
+      if (provider === AI_PROVIDERS.GROQ) {
+        return await this.fixWithGroq(content, errorDetails, groqApiKey, groqModel);
+      }
+
+      // OpenAI mode
+      if (provider === AI_PROVIDERS.OPENAI) {
+        return await this.fixWithOpenAI(content, errorDetails, openaiApiKey, openaiModel);
+      }
+
+      // Claude mode
+      if (provider === AI_PROVIDERS.CLAUDE) {
+        return await this.fixWithClaude(content, errorDetails, claudeApiKey, claudeModel);
+      }
+
+      throw new Error('Invalid AI provider');
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  /**
+   * Cleanup
+   */
+  async cleanup() {
+    return Promise.resolve();
+  }
+
+  /**
+   * Get system info
+   */
+  getSystemInfo() {
+    return {
+      platform: 'desktop',
+      aiProvider: 'ollama + cloud',
+      contextWindow: '8k-200k (model dependent)',
+      requiresInternet: 'Optional (Ollama is local)',
+      privacyLevel: 'Full privacy with Ollama',
+      performance: 'Native (fastest with Ollama)'
+    };
+  }
+}
+
+// Export singleton instance
+export const desktopAIService = new DesktopAIService();

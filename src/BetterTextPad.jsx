@@ -1,6 +1,12 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { X, Plus, Save, Upload, ChevronLeft, ChevronRight, Search, Replace, Code2, StickyNote, CheckSquare, ChevronsLeft, ChevronsRight, GripVertical, Bold, Italic, Underline, Sun, Moon, Settings, ChevronDown, ChevronUp, Info, FileText, Braces, FileCode, Folder, FolderOpen, FolderPlus, Edit2, Trash2, Image as ImageIcon } from 'lucide-react';
+import { X, Plus, Minus, Save, Upload, ChevronLeft, ChevronRight, Search, Replace, Code2, StickyNote, CheckSquare, ChevronsLeft, ChevronsRight, GripVertical, Bold, Italic, Underline, Sun, Moon, Settings, ChevronDown, ChevronUp, Info, FileText, Braces, FileCode, Folder, FolderOpen, FolderPlus, Edit2, Trash2, Image as ImageIcon, Sparkles, Loader2, Maximize2, Minimize2, PanelLeftClose, PanelLeft } from 'lucide-react';
 import { marked } from 'marked';
+import DiffViewerModal from './components/DiffViewerModal';
+import AISettingsModal from './components/AISettingsModal';
+import OllamaSetupWizard from './components/OllamaSetupWizard';
+import { AI_PROVIDERS, GROQ_MODELS, OPENAI_MODELS, CLAUDE_MODELS } from './services/AIService';
+import { isDesktop, getAIService } from './utils/platform';
+import { loadSecureSettings, saveSecureSettings } from './utils/secureStorage';
 
 const BRACE_PAIRS = {
   '{': '}',
@@ -810,6 +816,7 @@ const BetterTextPad = () => {
   const [findValue, setFindValue] = useState('');
   const [replaceValue, setReplaceValue] = useState('');
   const [structureCollapsed, setStructureCollapsed] = useState({});
+  const [structurePanelVisible, setStructurePanelVisible] = useState(true);
   const [currentPanel, setCurrentPanel] = useState('dev');
   const initialNotesStateRef = useRef(loadNotesState());
   const initialTodosStateRef = useRef(loadTodosState());
@@ -844,6 +851,33 @@ const BetterTextPad = () => {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [autoPairingEnabled, setAutoPairingEnabled] = useState(true);
   const [moveMenuFolderId, setMoveMenuFolderId] = useState(null);
+
+  // AI Fix state
+  const [aiFixState, setAIFixState] = useState({
+    isLoading: false,
+    fixedContent: null,
+    originalContent: null,
+    showDiff: false,
+    error: null,
+    progress: null
+  });
+  const [showAISettings, setShowAISettings] = useState(false);
+  const [showOllamaSetup, setShowOllamaSetup] = useState(false);
+  const [aiSettings, setAISettings] = useState(() => {
+    // Default settings - use Groq for all platforms
+    return {
+      provider: AI_PROVIDERS.GROQ,
+      groqApiKey: '',
+      groqModel: GROQ_MODELS['llama-3.3-70b'].id,
+      openaiApiKey: '',
+      openaiModel: 'gpt-4o-mini',
+      claudeApiKey: '',
+      claudeModel: 'claude-3-5-haiku-20241022',
+      ollamaModel: 'llama3.1:8b' // Desktop only - best for large files
+    };
+  });
+  // AI Service instance (platform-aware)
+  const [aiService, setAIService] = useState(null);
   const [dragFolderId, setDragFolderId] = useState(null);
   const [dragOverFolderId, setDragOverFolderId] = useState(null);
   const [dragNoteId, setDragNoteId] = useState(null);
@@ -1080,6 +1114,75 @@ const BetterTextPad = () => {
       console.warn('Failed to save todos', error);
     }
   }, [todoTabs, activeTodoTabId, nextTodoId]);
+
+  // Load AI settings on mount (async decryption)
+  useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        const settings = await loadSecureSettings();
+        if (settings) {
+          setAISettings(prev => ({ ...prev, ...settings }));
+        }
+      } catch (error) {
+        console.warn('Failed to load AI settings', error);
+      }
+    };
+    loadSettings();
+  }, []);
+
+  // Save AI settings to localStorage (async encryption)
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window?.localStorage) return;
+
+    const saveSettings = async () => {
+      try {
+        await saveSecureSettings(aiSettings);
+      } catch (error) {
+        console.warn('Failed to save AI settings', error);
+      }
+    };
+
+    // Only save if settings have values (not initial empty state)
+    if (aiSettings.provider) {
+      saveSettings();
+    }
+  }, [aiSettings]);
+
+  // Initialize AI service based on platform
+  useEffect(() => {
+    const initAIService = async () => {
+      try {
+        const service = await getAIService();
+        setAIService(service);
+
+        // For desktop, check if Ollama setup is needed
+        if (isDesktop()) {
+          // Check if setup wizard has been completed before
+          const setupCompleted = localStorage.getItem('betternotepad-ollama-setup-completed');
+
+          if (!setupCompleted) {
+            try {
+              const status = await service.checkOllamaStatus();
+              if (!status.available || !status.models || status.models.length === 0) {
+                // Show setup wizard
+                setShowOllamaSetup(true);
+              } else {
+                // Mark as completed if Ollama is already set up
+                localStorage.setItem('betternotepad-ollama-setup-completed', 'true');
+              }
+            } catch (error) {
+              console.error('Failed to check Ollama status:', error);
+              // Show setup wizard on error
+              setShowOllamaSetup(true);
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Failed to initialize AI service:', error);
+      }
+    };
+    initAIService();
+  }, []); // Run once on mount
 
   // Update cursor position when tab changes
   useEffect(() => {
@@ -1918,9 +2021,9 @@ const BetterTextPad = () => {
     const PADDING = '  ';
     const reg = /(>)(<)(\/*)/g;
     let pad = 0;
-    
+
     xml = xml.replace(reg, '$1\n$2$3');
-    
+
     return xml.split('\n').map((node) => {
       let indent = 0;
       if (node.match(/.+<\/\w[^>]*>$/)) {
@@ -1932,12 +2035,142 @@ const BetterTextPad = () => {
       } else {
         indent = 0;
       }
-      
+
       const padding = PADDING.repeat(pad);
       pad += indent;
-      
+
       return padding + node;
     }).join('\n');
+  };
+
+  // AI Fix handlers
+  const handleAIFix = async () => {
+    if (!errorMessage || !activeTab) return;
+
+    if (!aiService) {
+      setAIFixState({
+        isLoading: false,
+        fixedContent: null,
+        originalContent: null,
+        showDiff: false,
+        error: 'AI service is still initializing. Please try again.',
+        progress: null
+      });
+      return;
+    }
+
+    setAIFixState({
+      isLoading: true,
+      fixedContent: null,
+      originalContent: activeTab.content,
+      showDiff: false,
+      error: null,
+      progress: null
+    });
+
+    try {
+      const fixedContent = await aiService.fix(
+        activeTab.content,
+        errorMessage,
+        aiSettings,
+        (progress) => {
+          setAIFixState(prev => ({
+            ...prev,
+            progress: progress
+          }));
+        }
+      );
+
+      setAIFixState({
+        isLoading: false,
+        fixedContent,
+        originalContent: activeTab.content,
+        showDiff: true,
+        error: null,
+        progress: null
+      });
+    } catch (error) {
+      setAIFixState({
+        isLoading: false,
+        fixedContent: null,
+        originalContent: null,
+        showDiff: false,
+        error: error.message || 'Failed to fix content',
+        progress: null
+      });
+    }
+  };
+
+  const handleAcceptFix = () => {
+    if (!aiFixState.fixedContent || !activeTab) return;
+
+    // Create a new tab with the AI-fixed content
+    const aiFixedTab = {
+      id: nextId,
+      title: `${activeTab.title} (AI Fixed)`,
+      content: aiFixState.fixedContent,
+      isModified: true,
+      filePath: null
+    };
+
+    // Update current tab with original content (rename to show it's the original with errors)
+    setTabs(prevTabs => [
+      ...prevTabs.map(tab =>
+        tab.id === activeTabId
+          ? { ...tab, title: `${tab.title} (Original)`, isModified: false }
+          : tab
+      ),
+      aiFixedTab
+    ]);
+
+    // Switch to the new AI-fixed tab
+    setActiveTabId(nextId);
+    setNextId(nextId + 1);
+
+    // Clear error and close diff
+    setErrorMessage(null);
+    setAIFixState({
+      isLoading: false,
+      fixedContent: null,
+      originalContent: null,
+      showDiff: false,
+      error: null,
+      progress: null
+    });
+
+    // Revalidate the fixed content in the new tab
+    setTimeout(() => {
+      if (errorMessage?.type === 'JSON') {
+        formatJSON({ autoTriggered: true });
+      } else if (errorMessage?.type === 'XML') {
+        formatXML({ autoTriggered: true });
+      }
+    }, 100);
+  };
+
+  const handleRejectFix = () => {
+    setAIFixState({
+      isLoading: false,
+      fixedContent: null,
+      originalContent: null,
+      showDiff: false,
+      error: null,
+      progress: null
+    });
+  };
+
+  const handleSaveAISettings = async (newSettings) => {
+    setAISettings(newSettings);
+  };
+
+  // Handler for triggering setup wizard when unavailable model is selected
+  const handleTriggerSetupWizard = (modelId) => {
+    console.log('[BetterTextPad] Setup wizard triggered for model:', modelId);
+    // Update the selected model in settings
+    setAISettings(prev => ({ ...prev, ollamaModel: modelId }));
+    // Open the setup wizard
+    setShowOllamaSetup(true);
+    console.log('[BetterTextPad] showOllamaSetup set to true');
   };
 
   const saveFile = () => {
@@ -2082,7 +2315,7 @@ const BetterTextPad = () => {
                 }}
                 className={`w-4 h-4 ${buttonHoverClass} flex items-center justify-center`}
               >
-                {collapsed ? '+' : '−'}
+                {collapsed ? <Plus className="w-3 h-3" /> : <Minus className="w-3 h-3" />}
               </button>
             ) : (
               <span className={`w-4 h-4 ${bulletClass} flex items-center justify-center`}>•</span>
@@ -3766,8 +3999,8 @@ const BetterTextPad = () => {
 
   const renderDevPanel = () => {
     const structurePaneStyle = { width: `${Math.round(structureWidth)}px` };
-    // Only show structure panel for JSON and XML files
-    const showStructurePane = !isCSVTab && !isMarkdownTab && structureTree.type !== null;
+    // Only show structure panel for JSON and XML files when user has it enabled
+    const showStructurePane = !isCSVTab && !isMarkdownTab && structureTree.type !== null && structurePanelVisible;
     return (
     <div className="flex flex-col h-full">
       {/* Menu Bar */}
@@ -3836,8 +4069,35 @@ const BetterTextPad = () => {
             <FileCode className="w-4 h-4" />
             Format XML
           </button>
+
+          {/* Toggle Structure Panel - only show for JSON/XML */}
+          {!isCSVTab && !isMarkdownTab && structureTree.type !== null && (
+            <>
+              <div className={`w-px mx-2 ${theme === 'dark' ? 'bg-gray-700' : 'bg-gray-300'}`}></div>
+              <button
+                onClick={() => setStructurePanelVisible(!structurePanelVisible)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-sm transition-colors ${theme === 'dark' ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-gray-200 hover:bg-gray-300 text-gray-800'}`}
+                title={structurePanelVisible ? 'Hide Structure Panel' : 'Show Structure Panel'}
+              >
+                {structurePanelVisible ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeft className="w-4 h-4" />}
+                {structurePanelVisible ? 'Hide' : 'Show'} Structure
+              </button>
+            </>
+          )}
+        </div>
+
+        {/* Right side controls */}
+        <div className="flex gap-1.5 ml-auto">
+          <button
+            onClick={() => setShowAISettings(true)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-sm transition-colors ${theme === 'dark' ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-gray-200 hover:bg-gray-300 text-gray-800'}`}
+            title="AI Settings - Configure AI provider for error fixing"
+          >
+            <Settings className="w-4 h-4" />
+            AI Settings
+          </button>
+        </div>
       </div>
-    </div>
 
       {/* Find & Replace */}
       <div className={`border-b px-4 py-2 flex flex-wrap items-center gap-2 text-sm ${theme === 'dark' ? 'bg-gray-900 border-gray-800' : 'bg-gray-100 border-gray-300'}`}>
@@ -3983,7 +4243,39 @@ const BetterTextPad = () => {
                   >
                     <div className="px-3 py-2 border-b border-gray-800 text-xs uppercase tracking-wide text-gray-300 flex items-center justify-between gap-2 bg-gray-900">
                       <span>Structure</span>
-                      <span className="text-gray-400">{structureTree.type || 'Plain'}</span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            // Expand all nodes
+                            setStructureCollapsed({});
+                          }}
+                          className="text-gray-400 hover:text-white transition-colors p-1 rounded hover:bg-gray-800"
+                          title="Expand All"
+                        >
+                          <Maximize2 className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            // Collapse all nodes
+                            const allNodeIds = {};
+                            const collectNodeIds = (nodes) => {
+                              nodes.forEach(node => {
+                                if (node.children && node.children.length > 0) {
+                                  allNodeIds[node.id] = true;
+                                  collectNodeIds(node.children);
+                                }
+                              });
+                            };
+                            collectNodeIds(structureTree.nodes);
+                            setStructureCollapsed(allNodeIds);
+                          }}
+                          className="text-gray-400 hover:text-white transition-colors p-1 rounded hover:bg-gray-800"
+                          title="Collapse All"
+                        >
+                          <Minimize2 className="w-4 h-4" />
+                        </button>
+                        <span className="text-gray-400">{structureTree.type || 'Plain'}</span>
+                      </div>
                     </div>
                     <div className="p-3 max-h-full overflow-y-auto text-gray-200" ref={structureRef}>
                       {structureTree.nodes.length > 0 ? (
@@ -4227,6 +4519,37 @@ const BetterTextPad = () => {
                     </div>
                     <div className="flex items-center gap-2">
                       <button
+                        onClick={handleAIFix}
+                        disabled={aiFixState.isLoading}
+                        className={`px-3 py-1.5 rounded text-sm transition-colors flex items-center gap-2 ${
+                          aiFixState.isLoading
+                            ? 'bg-purple-600/50 cursor-not-allowed text-white'
+                            : theme === 'dark'
+                              ? 'bg-purple-600 hover:bg-purple-700 text-white'
+                              : 'bg-purple-500 hover:bg-purple-600 text-white'
+                        }`}
+                        title="Use AI to automatically fix errors"
+                      >
+                        {aiFixState.isLoading ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            {aiFixState.progress ? aiFixState.progress.text : 'Fixing...'}
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles className="w-4 h-4" />
+                            AI Fix
+                          </>
+                        )}
+                      </button>
+                      <button
+                        onClick={() => setShowAISettings(true)}
+                        className={`px-3 py-1.5 rounded text-sm transition-colors flex items-center gap-2 ${theme === 'dark' ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-gray-300 hover:bg-gray-400 text-gray-800'}`}
+                        title="Configure AI settings"
+                      >
+                        <Settings className="w-4 h-4" />
+                      </button>
+                      <button
                         onClick={() => {
                           if (errorMessage.type === 'JSON') {
                             formatJSON({ autoTriggered: false });
@@ -4322,6 +4645,33 @@ const BetterTextPad = () => {
                       </div>
                     )}
                   </div>
+
+                  {/* AI Fix Error Display */}
+                  {aiFixState.error && (
+                    <div className={`mb-4 p-4 rounded-lg border ${
+                      theme === 'dark'
+                        ? 'bg-red-900/20 border-red-800'
+                        : 'bg-red-50 border-red-200'
+                    }`}>
+                      <div className="flex items-start gap-2">
+                        <X className={`w-5 h-5 mt-0.5 flex-shrink-0 ${
+                          theme === 'dark' ? 'text-red-400' : 'text-red-600'
+                        }`} />
+                        <div>
+                          <p className={`text-sm font-semibold ${
+                            theme === 'dark' ? 'text-red-300' : 'text-red-900'
+                          }`}>
+                            AI Fix Failed
+                          </p>
+                          <p className={`text-xs mt-1 ${
+                            theme === 'dark' ? 'text-red-400' : 'text-red-700'
+                          }`}>
+                            {aiFixState.error}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Common JSON Issues Section */}
                   {errorMessage.type === 'JSON' && errorMessage.tips && errorMessage.tips.length > 0 && (
@@ -4857,6 +5207,44 @@ const BetterTextPad = () => {
             Close All Tabs
           </button>
         </div>
+      )}
+
+      {/* AI Fix Diff Viewer Modal */}
+      {aiFixState.showDiff && aiFixState.fixedContent && aiFixState.originalContent && (
+        <DiffViewerModal
+          original={aiFixState.originalContent}
+          fixed={aiFixState.fixedContent}
+          onAccept={handleAcceptFix}
+          onReject={handleRejectFix}
+          theme={theme}
+        />
+      )}
+
+      {/* AI Settings Modal */}
+      {showAISettings && (
+        <AISettingsModal
+          settings={aiSettings}
+          onSave={handleSaveAISettings}
+          onClose={() => setShowAISettings(false)}
+          theme={theme}
+          isDesktop={isDesktop()}
+          desktopAIService={aiService}
+          onTriggerSetupWizard={handleTriggerSetupWizard}
+        />
+      )}
+
+      {/* Ollama Setup Wizard (Desktop Only) */}
+      {showOllamaSetup && aiService && (
+        <OllamaSetupWizard
+          onClose={() => setShowOllamaSetup(false)}
+          onComplete={() => {
+            localStorage.setItem('betternotepad-ollama-setup-completed', 'true');
+            setShowOllamaSetup(false);
+          }}
+          theme={theme}
+          desktopAIService={aiService}
+          defaultModel={aiSettings.ollamaModel}
+        />
       )}
     </div>
   );
