@@ -1140,6 +1140,25 @@ const BetterTextPad = () => {
     };
   }, [tabContextMenu]);
 
+  // Keyboard shortcuts for Save and Save As
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // Ctrl/Cmd + S for Save
+      if ((e.ctrlKey || e.metaKey) && e.key === 's' && !e.shiftKey) {
+        e.preventDefault();
+        saveFile();
+      }
+      // Ctrl/Cmd + Shift + S for Save As
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 's') {
+        e.preventDefault();
+        saveFileAs();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [activeTabId, tabs]); // Dependencies to ensure we have latest data
+
   // Load tabs from localStorage on mount
   useEffect(() => {
     const loadTabs = () => {
@@ -2294,6 +2313,105 @@ const BetterTextPad = () => {
     console.log('[BetterTextPad] showOllamaSetup set to true');
   };
 
+  const saveFileAs = async () => {
+    const activeTab = tabs.find(t => t.id === activeTabId);
+    if (!activeTab) return;
+
+    // Check if running in Tauri desktop mode
+    const isTauri = window.__TAURI_INTERNALS__;
+
+    if (isTauri) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const { save } = await import('@tauri-apps/plugin-dialog');
+
+        // Always show save dialog for Save As
+        const filePath = await save({
+          defaultPath: activeTab.title || 'untitled.txt'
+        });
+
+        if (filePath) {
+          await invoke('save_file_to_path', {
+            filePath: filePath,
+            content: String(activeTab.content || '')
+          });
+
+          // Update tab with the new absolute path and mark as saved
+          setTabs(tabs.map(tab =>
+            tab.id === activeTabId
+              ? {
+                  ...tab,
+                  absolutePath: filePath,
+                  title: filePath.split(/[/\\]/).pop() || activeTab.title,
+                  isModified: false
+                }
+              : tab
+          ));
+
+          console.log('File saved as:', filePath);
+        }
+      } catch (error) {
+        console.error('Failed to save file as:', error);
+        alert('Failed to save file: ' + error);
+      }
+    } else {
+      // Browser mode - use File System Access API if available
+      try {
+        if ('showSaveFilePicker' in window) {
+          // Always show save picker for Save As
+          const handle = await window.showSaveFilePicker({
+            suggestedName: activeTab.title || 'untitled.txt',
+            types: [{
+              description: 'All Files',
+              accept: { '*/*': ['*'] }
+            }]
+          });
+
+          const writable = await handle.createWritable();
+          await writable.write(String(activeTab.content || ''));
+          await writable.close();
+
+          // Update tab with new file handle and mark as saved
+          setTabs(tabs.map(tab =>
+            tab.id === activeTabId
+              ? {
+                  ...tab,
+                  fileHandle: handle,
+                  title: handle.name,
+                  isModified: false
+                }
+              : tab
+          ));
+          console.log('File saved as using File System Access API:', handle.name);
+          return;
+        }
+      } catch (err) {
+        // User cancelled or API not supported, fall through to download
+        if (err.name !== 'AbortError') {
+          console.log('File System Access API error:', err);
+        }
+      }
+
+      // Fallback to browser download with original extension
+      const blob = new Blob([String(activeTab.content || '')], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const title = String(activeTab.title || 'untitled');
+      // Preserve original extension instead of forcing .txt
+      a.download = title;
+      a.click();
+      URL.revokeObjectURL(url);
+
+      // Mark as saved
+      setTabs(tabs.map(tab =>
+        tab.id === activeTabId
+          ? { ...tab, isModified: false }
+          : tab
+      ));
+    }
+  };
+
   const saveFile = async () => {
     const activeTab = tabs.find(t => t.id === activeTabId);
     if (!activeTab) return;
@@ -2322,31 +2440,8 @@ const BetterTextPad = () => {
 
           console.log('File saved successfully to:', activeTab.absolutePath);
         } else {
-          // Show save dialog to get the path - no filters to preserve original extension
-          const filePath = await save({
-            defaultPath: activeTab.title || 'untitled.txt'
-          });
-
-          if (filePath) {
-            await invoke('save_file_to_path', {
-              filePath: filePath,
-              content: String(activeTab.content || '')
-            });
-
-            // Update tab with the absolute path and mark as saved
-            setTabs(tabs.map(tab =>
-              tab.id === activeTabId
-                ? {
-                    ...tab,
-                    absolutePath: filePath,
-                    title: filePath.split(/[/\\]/).pop() || activeTab.title,
-                    isModified: false
-                  }
-                : tab
-            ));
-
-            console.log('File saved successfully to:', filePath);
-          }
+          // No existing path, use Save As behavior
+          await saveFileAs();
         }
       } catch (error) {
         console.error('Failed to save file:', error);
@@ -4401,10 +4496,20 @@ const BetterTextPad = () => {
             onClick={saveFile}
             disabled={!activeTab}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-sm transition-colors ${!activeTab ? 'bg-gray-600 cursor-not-allowed opacity-50' : theme === 'dark' ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-gray-200 hover:bg-gray-300 text-gray-800'}`}
-            title="Save File"
+            title="Save File (Ctrl/Cmd+S)"
           >
             <Save className="w-4 h-4" />
             Save
+          </button>
+
+          <button
+            onClick={saveFileAs}
+            disabled={!activeTab}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-sm transition-colors ${!activeTab ? 'bg-gray-600 cursor-not-allowed opacity-50' : theme === 'dark' ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-gray-200 hover:bg-gray-300 text-gray-800'}`}
+            title="Save As... (Ctrl/Cmd+Shift+S)"
+          >
+            <Save className="w-4 h-4" />
+            Save As...
           </button>
 
           <div className={`w-px mx-2 ${theme === 'dark' ? 'bg-gray-700' : 'bg-gray-300'}`}></div>
