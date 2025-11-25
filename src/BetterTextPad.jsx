@@ -2360,11 +2360,8 @@ const BetterTextPad = () => {
         if ('showSaveFilePicker' in window) {
           // Always show save picker for Save As
           const handle = await window.showSaveFilePicker({
-            suggestedName: activeTab.title || 'untitled.txt',
-            types: [{
-              description: 'All Files',
-              accept: { '*/*': ['*'] }
-            }]
+            suggestedName: activeTab.title || 'untitled.txt'
+            // Don't specify types to allow all file extensions
           });
 
           const writable = await handle.createWritable();
@@ -2475,11 +2472,8 @@ const BetterTextPad = () => {
 
           // Show save picker
           const handle = await window.showSaveFilePicker({
-            suggestedName: activeTab.title || 'untitled.txt',
-            types: [{
-              description: 'All Files',
-              accept: { '*/*': ['*'] }
-            }]
+            suggestedName: activeTab.title || 'untitled.txt'
+            // Don't specify types to allow all file extensions
           });
 
           const writable = await handle.createWritable();
