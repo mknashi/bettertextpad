@@ -174,7 +174,7 @@ const looksLikeXML = (text = '') => {
 
 const detectCSVContent = (text = '') => {
   if (!text) return false;
-  const trimmed = text.trim();
+  const trimmed = String(text).trim();
   if (!trimmed) return false;
 
   // Don't detect as CSV if it looks like JSON (valid or invalid)
@@ -204,7 +204,7 @@ const detectMarkdownContent = (text = '', filename = '') => {
   if (filename && filename.toLowerCase().endsWith('.md')) return true;
 
   if (!text) return false;
-  const trimmed = text.trim();
+  const trimmed = String(text).trim();
   if (!trimmed) return false;
 
   // Don't detect as markdown if it looks like JSON or XML
@@ -1049,9 +1049,15 @@ const BetterTextPad = () => {
         try {
           const parsed = JSON.parse(savedTabs);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            setTabs(parsed);
-            setActiveTabId(savedActiveId ? parseInt(savedActiveId, 10) : parsed[0]?.id);
-            setNextId(Math.max(...parsed.map(t => t.id), 0) + 1);
+            // Ensure content is always a string
+            const sanitizedTabs = parsed.map(tab => ({
+              ...tab,
+              content: String(tab.content || ''),
+              title: String(tab.title || 'Untitled')
+            }));
+            setTabs(sanitizedTabs);
+            setActiveTabId(savedActiveId ? parseInt(savedActiveId, 10) : sanitizedTabs[0]?.id);
+            setNextId(Math.max(...sanitizedTabs.map(t => t.id), 0) + 1);
             return;
           }
         } catch (error) {
@@ -1079,9 +1085,21 @@ const BetterTextPad = () => {
   // Save tabs to localStorage whenever they change
   useEffect(() => {
     if (tabs.length > 0) {
-      localStorage.setItem('notepad-tabs', JSON.stringify(tabs));
-      if (activeTabId !== null) {
-        localStorage.setItem('notepad-active-tab', activeTabId.toString());
+      try {
+        // Sanitize tabs to only include serializable properties
+        const sanitizedTabs = tabs.map(tab => ({
+          id: tab.id,
+          title: tab.title,
+          content: tab.content,
+          isModified: tab.isModified,
+          filePath: tab.filePath
+        }));
+        localStorage.setItem('notepad-tabs', JSON.stringify(sanitizedTabs));
+        if (activeTabId !== null) {
+          localStorage.setItem('notepad-active-tab', activeTabId.toString());
+        }
+      } catch (error) {
+        console.warn('Failed to save tabs to localStorage:', error);
       }
     }
   }, [tabs, activeTabId]);
@@ -1252,7 +1270,7 @@ const BetterTextPad = () => {
     const { tabId, content, fileName } = pendingAutoFormat;
     setPendingAutoFormat(null);
 
-    const trimmed = content.trim();
+    const trimmed = String(content).trim();
     const fileNameLower = (fileName || '').toLowerCase();
     const isJsFile = fileNameLower.endsWith('.js') || fileNameLower.endsWith('.jsx') ||
                      fileNameLower.endsWith('.ts') || fileNameLower.endsWith('.tsx');
@@ -1835,14 +1853,14 @@ const BetterTextPad = () => {
 
     const targetTab = tabsRef.current.find(t => t.id === tabId);
     const workingContent = content ?? targetTab?.content ?? '';
-    if (!workingContent.trim()) {
+    if (!String(workingContent).trim()) {
       if (!autoTriggered) {
         setErrorMessage(null);
       }
       return false;
     }
 
-    const trimmed = workingContent.trim();
+    const trimmed = String(workingContent).trim();
     if (allowRedirect && trimmed.startsWith('<')) {
       return formatXML({ tabId, content: workingContent, autoTriggered, cursor, allowRedirect: false });
     }
@@ -1888,14 +1906,14 @@ const BetterTextPad = () => {
 
     const targetTab = tabsRef.current.find(t => t.id === tabId);
     const workingContent = content ?? targetTab?.content ?? '';
-    if (!workingContent.trim()) {
+    if (!String(workingContent).trim()) {
       if (!autoTriggered) {
         setErrorMessage(null);
       }
       return false;
     }
 
-    const trimmed = workingContent.trim();
+    const trimmed = String(workingContent).trim();
     if (allowRedirect && (trimmed.startsWith('{') || trimmed.startsWith('['))) {
       return formatJSON({ tabId, content: workingContent, autoTriggered, cursor, allowRedirect: false });
     }
@@ -1958,7 +1976,7 @@ const BetterTextPad = () => {
     }
 
     autoFormatTimeoutRef.current = setTimeout(() => {
-      const trimmed = content.trim();
+      const trimmed = String(content).trim();
       if (!trimmed || trimmed.length < 2) return;
       if (activeTabIdRef.current !== tabId) return;
 
@@ -1980,7 +1998,7 @@ const BetterTextPad = () => {
     // Update error message with current errors
     if (errorMessage && errorMessage.type === 'JSON') {
       try {
-        const trimmed = content.trim();
+        const trimmed = String(content).trim();
         if (trimmed && (trimmed.startsWith('{') || trimmed.startsWith('['))) {
           JSON.parse(content);
           // Content is valid JSON, clear the error
@@ -1993,7 +2011,7 @@ const BetterTextPad = () => {
       }
     } else if (errorMessage && errorMessage.type === 'XML') {
       try {
-        const trimmed = content.trim();
+        const trimmed = String(content).trim();
         if (trimmed && trimmed.startsWith('<')) {
           const parser = new DOMParser();
           const xmlDoc = parser.parseFromString(content, 'text/xml');
@@ -2102,14 +2120,15 @@ const BetterTextPad = () => {
     }
   };
 
-  const handleAcceptFix = () => {
-    if (!aiFixState.fixedContent || !activeTab) return;
+  const handleAcceptFix = (customContent = null) => {
+    const contentToUse = customContent || aiFixState.fixedContent;
+    if (!contentToUse || !activeTab) return;
 
     // Create a new tab with the AI-fixed content
     const aiFixedTab = {
       id: nextId,
       title: `${activeTab.title} (AI Fixed)`,
-      content: aiFixState.fixedContent,
+      content: String(contentToUse),
       isModified: true,
       filePath: null
     };
@@ -2178,11 +2197,12 @@ const BetterTextPad = () => {
     const activeTab = tabs.find(t => t.id === activeTabId);
     if (!activeTab) return;
 
-    const blob = new Blob([activeTab.content], { type: 'text/plain' });
+    const blob = new Blob([String(activeTab.content || '')], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = activeTab.title.endsWith('.txt') ? activeTab.title : activeTab.title + '.txt';
+    const title = String(activeTab.title || 'untitled');
+    a.download = title.endsWith('.txt') ? title : title + '.txt';
     a.click();
     URL.revokeObjectURL(url);
 
@@ -2200,7 +2220,7 @@ const BetterTextPad = () => {
 
     const reader = new FileReader();
     reader.onload = (event) => {
-      const content = event.target.result;
+      const content = String(event.target.result || '');
       const newTabId = nextId;
       const newTab = {
         id: newTabId,
@@ -2914,7 +2934,7 @@ const BetterTextPad = () => {
   };
 
   const activeTab = tabs.find(t => t.id === activeTabId);
-  const editorLines = activeTab ? activeTab.content.split('\n') : [];
+  const editorLines = activeTab && activeTab.content ? String(activeTab.content).split('\n') : [];
   const isCsvFileName = useMemo(() => {
     const name = (activeTab?.filePath || activeTab?.title || '').toLowerCase();
     return name.endsWith('.csv');
@@ -3112,7 +3132,7 @@ const BetterTextPad = () => {
 
   const structureTree = useMemo(() => {
     if (!activeTab?.content) return { type: null, nodes: [] };
-    const trimmed = activeTab.content.trim();
+    const trimmed = String(activeTab.content).trim();
     if (!trimmed) return { type: null, nodes: [] };
 
     // Check file extension to avoid false detection of JS files as JSON
@@ -3174,7 +3194,7 @@ const BetterTextPad = () => {
         return { ...prev, [activeTab.id]: parsed };
       }
       const serializedExisting = serializeCSV(existing);
-      if (serializedExisting.trim() === (activeTab.content || '').trim()) {
+      if (String(serializedExisting).trim() === String(activeTab.content || '').trim()) {
         return prev;
       }
       return { ...prev, [activeTab.id]: parsed };
@@ -3529,7 +3549,7 @@ const BetterTextPad = () => {
                           <div className="h-full w-full flex items-center justify-center text-xs text-gray-500">No image</div>
                         )}
                         <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent px-3 py-2 flex items-center justify-between">
-                          <span className="text-white text-sm font-semibold truncate">{note.title?.trim() || 'Untitled note'}</span>
+                          <span className="text-white text-sm font-semibold truncate">{String(note.title || '').trim() || 'Untitled note'}</span>
                           <span className="text-[10px] text-gray-200">{note.images?.length || 0} img</span>
                         </div>
                       </div>
@@ -3683,7 +3703,7 @@ const BetterTextPad = () => {
                   />
                 ) : (
                   <div>
-                    <p className="font-semibold text-sm">{tab.title?.trim() || `List ${tab.id}`}</p>
+                    <p className="font-semibold text-sm">{String(tab.title || '').trim() || `List ${tab.id}`}</p>
                     <p className="text-xs text-gray-500">{tab.items.length} tasks</p>
                   </div>
                 )}
@@ -4799,8 +4819,8 @@ const BetterTextPad = () => {
           <span>Tabs: {tabs.length}</span>
           {activeTab && (
             <>
-              <span>Length: {activeTab.content.length} characters</span>
-              <span>Lines: {activeTab.content.split('\n').length}</span>
+              <span>Length: {String(activeTab.content || '').length} characters</span>
+              <span>Lines: {String(activeTab.content || '').split('\n').length}</span>
               <span className="text-blue-400">Ln {cursorPosition.line}, Col {cursorPosition.column}</span>
             </>
           )}

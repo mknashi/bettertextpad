@@ -3,7 +3,10 @@ import { X, Check, XCircle } from 'lucide-react';
 import { generateDiff, getDiffStats, getInlineDiff } from '../utils/DiffUtils';
 
 const DiffViewerModal = ({ original, fixed, onAccept, onReject, theme }) => {
-  const diff = useMemo(() => generateDiff(original, fixed), [original, fixed]);
+  const [ignoreBlankLines, setIgnoreBlankLines] = useState(false);
+  const [acceptedChanges, setAcceptedChanges] = useState(new Set());
+
+  const diff = useMemo(() => generateDiff(original, fixed, { ignoreBlankLines }), [original, fixed, ignoreBlankLines]);
   const stats = useMemo(() => getDiffStats(diff), [diff]);
 
   const leftPanelRef = useRef(null);
@@ -123,6 +126,92 @@ const DiffViewerModal = ({ original, fixed, onAccept, onReject, theme }) => {
     );
   };
 
+  // Toggle acceptance of a specific change
+  const toggleChangeAcceptance = (index) => {
+    const newAccepted = new Set(acceptedChanges);
+    if (newAccepted.has(index)) {
+      newAccepted.delete(index);
+    } else {
+      newAccepted.add(index);
+    }
+    setAcceptedChanges(newAccepted);
+  };
+
+  // Handle accepting selected changes
+  const handleAcceptSelected = () => {
+    // Build a map of changes by line number
+    const changesByLine = new Map();
+    acceptedChanges.forEach(idx => {
+      const change = diff[idx];
+      changesByLine.set(change.lineNum, change);
+    });
+
+    // Apply changes line by line
+    const resultLines = [];
+    let diffIdx = 0;
+
+    while (diffIdx < diff.length) {
+      const line = diff[diffIdx];
+      const isAccepted = acceptedChanges.has(diffIdx);
+
+      if (line.type === 'unchanged') {
+        resultLines.push(line.original);
+      } else if (line.type === 'removed') {
+        if (!isAccepted) {
+          // Keep the original line if removal is not accepted
+          resultLines.push(line.original);
+        }
+        // Otherwise skip it (removed)
+      } else if (line.type === 'added') {
+        if (isAccepted) {
+          // Add the new line if addition is accepted
+          resultLines.push(line.fixed);
+        }
+        // Otherwise skip it (not added)
+      } else if (line.type === 'modified') {
+        if (isAccepted) {
+          // Use the fixed version if modification is accepted
+          resultLines.push(line.fixed);
+        } else {
+          // Use the original version if not accepted
+          resultLines.push(line.original);
+        }
+      }
+
+      diffIdx++;
+    }
+
+    onAccept(resultLines.join('\n'));
+  };
+
+  // Scroll to a specific diff line
+  const scrollToDiff = (index) => {
+    const leftPanel = leftPanelRef.current;
+    const rightPanel = rightPanelRef.current;
+    if (!leftPanel || !rightPanel) return;
+
+    // Get all line elements in the left panel
+    const leftLines = leftPanel.children;
+    if (index >= 0 && index < leftLines.length) {
+      const targetLine = leftLines[index];
+
+      // Scroll the target line into view
+      targetLine.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center'
+      });
+    }
+  };
+
+  // Get positions of all differences for the minimap
+  const diffPositions = useMemo(() => {
+    return diff.map((line, idx) => ({
+      index: idx,
+      type: line.type,
+      position: (idx / diff.length) * 100
+    })).filter(item => item.type !== 'unchanged');
+  }, [diff]);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
       <div
@@ -177,6 +266,18 @@ const DiffViewerModal = ({ original, fixed, onAccept, onReject, theme }) => {
             <label className="flex items-center gap-2 text-sm cursor-pointer">
               <input
                 type="checkbox"
+                checked={ignoreBlankLines}
+                onChange={(e) => setIgnoreBlankLines(e.target.checked)}
+                className="w-4 h-4"
+              />
+              <span className={theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}>
+                Ignore Blank Lines
+              </span>
+            </label>
+
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <input
+                type="checkbox"
                 checked={syncScroll}
                 onChange={(e) => setSyncScroll(e.target.checked)}
                 className="w-4 h-4"
@@ -201,7 +302,7 @@ const DiffViewerModal = ({ original, fixed, onAccept, onReject, theme }) => {
         </div>
 
         {/* Diff Content - Side by Side */}
-        <div className="flex-1 overflow-hidden flex">
+        <div className="flex-1 overflow-hidden flex relative">
           {/* Left Panel - Original */}
           <div className="flex-1 flex flex-col border-r border-gray-700">
             <div className={`px-4 py-2 font-semibold text-xs uppercase tracking-wide border-b flex items-center justify-between ${
@@ -238,11 +339,21 @@ const DiffViewerModal = ({ original, fixed, onAccept, onReject, theme }) => {
                   );
                 }
 
+                const isChangedLine = line.type === 'removed' || line.type === 'modified';
                 return (
                   <div
                     key={idx}
-                    className={getDiffLineClass(line.type, theme, 'left')}
+                    className={`${getDiffLineClass(line.type, theme, 'left')} ${isChangedLine ? 'group' : ''}`}
                   >
+                    {isChangedLine && (
+                      <input
+                        type="checkbox"
+                        checked={acceptedChanges.has(idx)}
+                        onChange={() => toggleChangeAcceptance(idx)}
+                        className="w-4 h-4 mr-2 flex-shrink-0 cursor-pointer opacity-50 group-hover:opacity-100 transition-opacity"
+                        title="Accept this change"
+                      />
+                    )}
                     <span className={`inline-block w-8 text-right mr-3 select-none flex-shrink-0 ${
                       theme === 'dark' ? 'text-gray-600' : 'text-gray-400'
                     }`}>
@@ -304,11 +415,21 @@ const DiffViewerModal = ({ original, fixed, onAccept, onReject, theme }) => {
                   );
                 }
 
+                const isChangedLine = line.type === 'added' || line.type === 'modified';
                 return (
                   <div
                     key={idx}
-                    className={getDiffLineClass(line.type, theme, 'right')}
+                    className={`${getDiffLineClass(line.type, theme, 'right')} ${isChangedLine ? 'group' : ''}`}
                   >
+                    {isChangedLine && (
+                      <input
+                        type="checkbox"
+                        checked={acceptedChanges.has(idx)}
+                        onChange={() => toggleChangeAcceptance(idx)}
+                        className="w-4 h-4 mr-2 flex-shrink-0 cursor-pointer opacity-50 group-hover:opacity-100 transition-opacity"
+                        title="Accept this change"
+                      />
+                    )}
                     <span className={`inline-block w-8 text-right mr-3 select-none flex-shrink-0 ${
                       theme === 'dark' ? 'text-gray-600' : 'text-gray-400'
                     }`}>
@@ -332,6 +453,31 @@ const DiffViewerModal = ({ original, fixed, onAccept, onReject, theme }) => {
                 );
               })}
             </div>
+          </div>
+
+          {/* Diff Minimap - Right Side Markers */}
+          <div className={`absolute right-0 top-0 bottom-0 w-4 ${
+            theme === 'dark' ? 'bg-gray-800' : 'bg-gray-100'
+          } border-l ${
+            theme === 'dark' ? 'border-gray-700' : 'border-gray-200'
+          }`}>
+            {diffPositions.map((item, idx) => {
+              const color = item.type === 'added'
+                ? 'bg-green-500'
+                : item.type === 'removed'
+                  ? 'bg-red-500'
+                  : 'bg-blue-500';
+
+              return (
+                <div
+                  key={idx}
+                  className={`absolute w-full h-1 ${color} cursor-pointer hover:h-2 transition-all`}
+                  style={{ top: `${item.position}%` }}
+                  onClick={() => scrollToDiff(item.index)}
+                  title={`${item.type} at line ${diff[item.index].lineNum}`}
+                />
+              );
+            })}
           </div>
         </div>
 
@@ -367,8 +513,22 @@ const DiffViewerModal = ({ original, fixed, onAccept, onReject, theme }) => {
               Reject Changes
             </button>
 
+            {acceptedChanges.size > 0 && (
+              <button
+                onClick={handleAcceptSelected}
+                className={`flex items-center gap-2 px-5 py-2.5 rounded transition-colors font-medium ${
+                  theme === 'dark'
+                    ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                    : 'bg-blue-500 hover:bg-blue-600 text-white'
+                }`}
+              >
+                <Check className="w-4 h-4" />
+                Accept Selected ({acceptedChanges.size})
+              </button>
+            )}
+
             <button
-              onClick={onAccept}
+              onClick={() => onAccept(fixed)}
               className={`flex items-center gap-2 px-5 py-2.5 rounded transition-colors font-medium ${
                 theme === 'dark'
                   ? 'bg-green-600 hover:bg-green-700 text-white'
@@ -376,7 +536,7 @@ const DiffViewerModal = ({ original, fixed, onAccept, onReject, theme }) => {
               }`}
             >
               <Check className="w-4 h-4" />
-              Accept Changes
+              Accept All Changes
             </button>
           </div>
         </div>
