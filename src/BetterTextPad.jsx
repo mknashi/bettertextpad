@@ -1,6 +1,41 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { X, Plus, Minus, Save, Upload, ChevronLeft, ChevronRight, Search, Replace, Code2, StickyNote, CheckSquare, ChevronsLeft, ChevronsRight, GripVertical, Bold, Italic, Underline, Sun, Moon, Settings, ChevronDown, ChevronUp, Info, FileText, Braces, FileCode, Folder, FolderOpen, FolderPlus, Edit2, Trash2, Image as ImageIcon, Sparkles, Loader2, Maximize2, Minimize2, PanelLeftClose, PanelLeft } from 'lucide-react';
 import { marked } from 'marked';
+import Prism from 'prismjs';
+import 'prismjs/themes/prism-tomorrow.css';
+// Import Prism language components
+// Note: Order matters! Some languages have dependencies
+import 'prismjs/components/prism-markup';
+import 'prismjs/components/prism-markup-templating'; // Required for PHP, JSP, etc.
+import 'prismjs/components/prism-css';
+import 'prismjs/components/prism-javascript';
+import 'prismjs/components/prism-typescript';
+import 'prismjs/components/prism-jsx';
+import 'prismjs/components/prism-tsx';
+import 'prismjs/components/prism-php';
+import 'prismjs/components/prism-python';
+import 'prismjs/components/prism-ruby';
+import 'prismjs/components/prism-java';
+import 'prismjs/components/prism-go';
+import 'prismjs/components/prism-rust';
+import 'prismjs/components/prism-c';
+import 'prismjs/components/prism-cpp';
+import 'prismjs/components/prism-csharp';
+import 'prismjs/components/prism-swift';
+import 'prismjs/components/prism-kotlin';
+import 'prismjs/components/prism-scala';
+import 'prismjs/components/prism-objectivec';
+import 'prismjs/components/prism-perl';
+import 'prismjs/components/prism-bash';
+import 'prismjs/components/prism-lua';
+import 'prismjs/components/prism-r';
+import 'prismjs/components/prism-dart';
+import 'prismjs/components/prism-sql';
+import 'prismjs/components/prism-json';
+import 'prismjs/components/prism-yaml';
+import 'prismjs/components/prism-toml';
+import 'prismjs/components/prism-ini';
+import 'prismjs/components/prism-markdown';
 import DiffViewerModal from './components/DiffViewerModal';
 import AISettingsModal from './components/AISettingsModal';
 import OllamaSetupWizard from './components/OllamaSetupWizard';
@@ -27,6 +62,180 @@ const DEFAULT_CSV_PREVIEW_HEIGHT = 220;
 const MIN_CSV_PREVIEW_HEIGHT = 120;
 const MAX_CSV_PREVIEW_HEIGHT = 420;
 const APP_NAME = 'Better Text Pad';
+
+// File type detection utility
+const getFileType = (filename = '') => {
+  const name = (filename || '').toLowerCase();
+
+  // Code/Script files that should not be auto-formatted as JSON/XML
+  const codeExtensions = [
+    '.js', '.jsx', '.ts', '.tsx',  // JavaScript/TypeScript
+    '.php', '.php3', '.php4', '.php5', '.phtml',  // PHP
+    '.py', '.pyw', '.pyx',  // Python
+    '.rb', '.rbw',  // Ruby
+    '.java', '.class',  // Java
+    '.jsp', '.jspx',  // JSP
+    '.go',  // Go
+    '.rs',  // Rust
+    '.c', '.h', '.cpp', '.hpp', '.cc', '.cxx',  // C/C++
+    '.cs',  // C#
+    '.swift',  // Swift
+    '.kt', '.kts',  // Kotlin
+    '.scala',  // Scala
+    '.m', '.mm',  // Objective-C
+    '.pl', '.pm',  // Perl
+    '.sh', '.bash', '.zsh', '.fish',  // Shell
+    '.lua',  // Lua
+    '.r', '.R',  // R
+    '.dart',  // Dart
+    '.sql',  // SQL
+    '.vb', '.vbs',  // Visual Basic
+    '.asm', '.s',  // Assembly
+    '.f', '.f90', '.f95',  // Fortran
+    '.pas',  // Pascal
+    '.groovy', '.gradle'  // Groovy
+  ];
+
+  // Config files
+  const configExtensions = [
+    '.ini', '.conf', '.config', '.toml', '.yaml', '.yml',
+    '.properties', '.env', '.cfg'
+  ];
+
+  // Markup files
+  const markupExtensions = [
+    '.html', '.htm', '.xhtml', '.xml', '.svg'
+  ];
+
+  // Markdown
+  if (name.endsWith('.md') || name.endsWith('.markdown')) {
+    return { type: 'markdown', shouldAutoFormat: false };
+  }
+
+  // Code files
+  if (codeExtensions.some(ext => name.endsWith(ext))) {
+    return { type: 'code', shouldAutoFormat: false };
+  }
+
+  // Config files
+  if (configExtensions.some(ext => name.endsWith(ext))) {
+    return { type: 'config', shouldAutoFormat: false };
+  }
+
+  // Markup files (can be auto-formatted as XML)
+  if (markupExtensions.some(ext => name.endsWith(ext))) {
+    return { type: 'markup', shouldAutoFormat: true };
+  }
+
+  // JSON files
+  if (name.endsWith('.json')) {
+    return { type: 'json', shouldAutoFormat: true };
+  }
+
+  // Plain text or unknown
+  return { type: 'text', shouldAutoFormat: true };
+};
+
+// Get Prism language identifier from filename
+const getPrismLanguage = (filename = '') => {
+  const name = (filename || '').toLowerCase();
+
+  // JavaScript/TypeScript
+  if (name.endsWith('.js')) return 'javascript';
+  if (name.endsWith('.jsx')) return 'jsx';
+  if (name.endsWith('.ts')) return 'typescript';
+  if (name.endsWith('.tsx')) return 'tsx';
+
+  // PHP
+  if (name.endsWith('.php') || name.endsWith('.php3') || name.endsWith('.php4') ||
+      name.endsWith('.php5') || name.endsWith('.phtml')) return 'php';
+
+  // Python
+  if (name.endsWith('.py') || name.endsWith('.pyw') || name.endsWith('.pyx')) return 'python';
+
+  // Ruby
+  if (name.endsWith('.rb') || name.endsWith('.rbw')) return 'ruby';
+
+  // Java
+  if (name.endsWith('.java') || name.endsWith('.class')) return 'java';
+
+  // JSP
+  if (name.endsWith('.jsp') || name.endsWith('.jspx')) return 'markup';
+
+  // Go
+  if (name.endsWith('.go')) return 'go';
+
+  // Rust
+  if (name.endsWith('.rs')) return 'rust';
+
+  // C/C++
+  if (name.endsWith('.c') || name.endsWith('.h')) return 'c';
+  if (name.endsWith('.cpp') || name.endsWith('.hpp') || name.endsWith('.cc') ||
+      name.endsWith('.cxx')) return 'cpp';
+
+  // C#
+  if (name.endsWith('.cs')) return 'csharp';
+
+  // Swift
+  if (name.endsWith('.swift')) return 'swift';
+
+  // Kotlin
+  if (name.endsWith('.kt') || name.endsWith('.kts')) return 'kotlin';
+
+  // Scala
+  if (name.endsWith('.scala')) return 'scala';
+
+  // Objective-C
+  if (name.endsWith('.m') || name.endsWith('.mm')) return 'objectivec';
+
+  // Perl
+  if (name.endsWith('.pl') || name.endsWith('.pm')) return 'perl';
+
+  // Shell
+  if (name.endsWith('.sh') || name.endsWith('.bash') || name.endsWith('.zsh') ||
+      name.endsWith('.fish')) return 'bash';
+
+  // Lua
+  if (name.endsWith('.lua')) return 'lua';
+
+  // R
+  if (name.endsWith('.r') || name.endsWith('.R')) return 'r';
+
+  // Dart
+  if (name.endsWith('.dart')) return 'dart';
+
+  // SQL
+  if (name.endsWith('.sql')) return 'sql';
+
+  // Visual Basic
+  if (name.endsWith('.vb') || name.endsWith('.vbs')) return 'vbnet';
+
+  // Assembly
+  if (name.endsWith('.asm') || name.endsWith('.s')) return 'asm6502';
+
+  // Markup
+  if (name.endsWith('.html') || name.endsWith('.htm')) return 'markup';
+  if (name.endsWith('.xml')) return 'markup';
+  if (name.endsWith('.svg')) return 'markup';
+
+  // Styles
+  if (name.endsWith('.css')) return 'css';
+
+  // Data formats
+  if (name.endsWith('.json')) return 'json';
+  if (name.endsWith('.yaml') || name.endsWith('.yml')) return 'yaml';
+  if (name.endsWith('.toml')) return 'toml';
+  if (name.endsWith('.ini') || name.endsWith('.conf') || name.endsWith('.config')) return 'ini';
+
+  // Markdown
+  if (name.endsWith('.md') || name.endsWith('.markdown')) return 'markdown';
+
+  // Groovy
+  if (name.endsWith('.groovy') || name.endsWith('.gradle')) return 'groovy';
+
+  // Default
+  return null;
+};
 
 const LogoMark = ({ size = 24, className = '' }) => (
   <img
@@ -237,114 +446,6 @@ const detectMarkdownContent = (text = '', filename = '') => {
   }
 
   return false;
-};
-
-// JavaScript syntax highlighting tokenizer
-const highlightJavaScript = (line) => {
-  // Always return at least the line text, even if empty
-  if (!line) return [{ type: 'normal', text: line || '' }];
-
-  const tokens = [];
-  const jsKeywords = /\b(const|let|var|function|return|if|else|for|while|do|switch|case|break|continue|try|catch|finally|throw|new|class|extends|import|export|from|default|async|await|yield|this|super|static|get|set|typeof|instanceof|delete|void|in|of|true|false|null|undefined)\b/g;
-  const jsStrings = /(["'`])(?:(?=(\\?))\2.)*?\1/g;
-  const jsComments = /(\/\/.*$|\/\*[\s\S]*?\*\/)/g;
-  const jsNumbers = /\b\d+(\.\d+)?\b/g;
-  const jsFunctions = /\b([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\(/g;
-
-  // Mark all special segments
-  const segments = [];
-
-  // Find comments (highest priority)
-  let match;
-  try {
-    while ((match = jsComments.exec(line)) !== null) {
-      segments.push({ start: match.index, end: match.index + match[0].length, type: 'comment', text: match[0] });
-    }
-
-    // Find strings
-    jsStrings.lastIndex = 0;
-    while ((match = jsStrings.exec(line)) !== null) {
-      // Skip if inside a comment
-      if (!segments.some(s => s.type === 'comment' && match.index >= s.start && match.index < s.end)) {
-        segments.push({ start: match.index, end: match.index + match[0].length, type: 'string', text: match[0] });
-      }
-    }
-
-    // Find keywords
-    jsKeywords.lastIndex = 0;
-    while ((match = jsKeywords.exec(line)) !== null) {
-      // Skip if inside comment or string
-      if (!segments.some(s => (s.type === 'comment' || s.type === 'string') && match.index >= s.start && match.index < s.end)) {
-        segments.push({ start: match.index, end: match.index + match[0].length, type: 'keyword', text: match[0] });
-      }
-    }
-
-    // Find numbers
-    jsNumbers.lastIndex = 0;
-    while ((match = jsNumbers.exec(line)) !== null) {
-      // Skip if inside comment, string, or keyword
-      if (!segments.some(s => match.index >= s.start && match.index < s.end)) {
-        segments.push({ start: match.index, end: match.index + match[0].length, type: 'number', text: match[0] });
-      }
-    }
-
-    // Find function calls
-    jsFunctions.lastIndex = 0;
-    while ((match = jsFunctions.exec(line)) !== null) {
-      const funcName = match[1];
-      const funcStart = match.index;
-      const funcEnd = match.index + funcName.length;
-      // Skip if inside comment, string, or already marked
-      if (!segments.some(s => funcStart >= s.start && funcStart < s.end)) {
-        segments.push({ start: funcStart, end: funcEnd, type: 'function', text: funcName });
-      }
-    }
-  } catch (e) {
-    // If regex fails, just return the whole line as normal text
-    return [{ type: 'normal', text: line }];
-  }
-
-  // Sort segments by start position
-  segments.sort((a, b) => a.start - b.start);
-
-  // Build tokens from segments
-  let lastIndex = 0;
-  for (const segment of segments) {
-    // Add normal text before this segment
-    if (segment.start > lastIndex) {
-      tokens.push({ type: 'normal', text: line.substring(lastIndex, segment.start) });
-    }
-    // Add the segment
-    tokens.push({ type: segment.type, text: segment.text });
-    lastIndex = segment.end;
-  }
-
-  // Add remaining text - CRITICAL: always add remaining text to prevent truncation
-  if (lastIndex < line.length) {
-    tokens.push({ type: 'normal', text: line.substring(lastIndex) });
-  }
-
-  // If no tokens were created, return the whole line
-  if (tokens.length === 0) {
-    return [{ type: 'normal', text: line }];
-  }
-
-  // CRITICAL: Validate that all characters are accounted for
-  const tokenText = tokens.map(t => t.text || '').join('');
-  if (tokenText.length !== line.length) {
-    // Something went wrong in tokenization, return the whole line as normal text
-    console.warn('Tokenization mismatch:', {
-      expected: line.length,
-      got: tokenText.length,
-      line,
-      tokens,
-      diff: line.length - tokenText.length,
-      missing: line.substring(tokenText.length)
-    });
-    return [{ type: 'normal', text: line }];
-  }
-
-  return tokens;
 };
 
 const getLineColumnFromIndex = (text, index) => {
@@ -1271,15 +1372,15 @@ const BetterTextPad = () => {
     setPendingAutoFormat(null);
 
     const trimmed = String(content).trim();
-    const fileNameLower = (fileName || '').toLowerCase();
-    const isJsFile = fileNameLower.endsWith('.js') || fileNameLower.endsWith('.jsx') ||
-                     fileNameLower.endsWith('.ts') || fileNameLower.endsWith('.tsx');
+    const fileType = getFileType(fileName);
 
-    // Don't auto-format JavaScript files as JSON
-    if (!isJsFile && (looksLikeJSON(trimmed) || trimmed.startsWith('{') || trimmed.startsWith('['))) {
-      formatJSON({ tabId, content, autoTriggered: false });
-    } else if (looksLikeXML(trimmed) || trimmed.startsWith('<')) {
-      formatXML({ tabId, content, autoTriggered: false });
+    // Only auto-format if file type allows it
+    if (fileType.shouldAutoFormat) {
+      if (fileType.type === 'json' || looksLikeJSON(trimmed) || trimmed.startsWith('{') || trimmed.startsWith('[')) {
+        formatJSON({ tabId, content, autoTriggered: false });
+      } else if (fileType.type === 'markup' || looksLikeXML(trimmed) || trimmed.startsWith('<')) {
+        formatXML({ tabId, content, autoTriggered: false });
+      }
     }
   }, [pendingAutoFormat]);
 
@@ -2193,25 +2294,86 @@ const BetterTextPad = () => {
     console.log('[BetterTextPad] showOllamaSetup set to true');
   };
 
-  const saveFile = () => {
+  const saveFile = async () => {
     const activeTab = tabs.find(t => t.id === activeTabId);
     if (!activeTab) return;
 
-    const blob = new Blob([String(activeTab.content || '')], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    const title = String(activeTab.title || 'untitled');
-    a.download = title.endsWith('.txt') ? title : title + '.txt';
-    a.click();
-    URL.revokeObjectURL(url);
+    // Check if running in Tauri desktop mode
+    const isTauri = window.__TAURI_INTERNALS__;
 
-    // Mark as saved
-    setTabs(tabs.map(tab => 
-      tab.id === activeTabId 
-        ? { ...tab, isModified: false }
-        : tab
-    ));
+    if (isTauri) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const { save } = await import('@tauri-apps/plugin-dialog');
+
+        // If the tab has an existing absolute file path, save directly to it
+        if (activeTab.absolutePath) {
+          await invoke('save_file_to_path', {
+            filePath: activeTab.absolutePath,
+            content: String(activeTab.content || '')
+          });
+
+          // Mark as saved
+          setTabs(tabs.map(tab =>
+            tab.id === activeTabId
+              ? { ...tab, isModified: false }
+              : tab
+          ));
+
+          console.log('File saved successfully to:', activeTab.absolutePath);
+        } else {
+          // Show save dialog to get the path
+          const filePath = await save({
+            defaultPath: activeTab.title || 'untitled.txt',
+            filters: [{
+              name: 'All Files',
+              extensions: ['*']
+            }]
+          });
+
+          if (filePath) {
+            await invoke('save_file_to_path', {
+              filePath: filePath,
+              content: String(activeTab.content || '')
+            });
+
+            // Update tab with the absolute path and mark as saved
+            setTabs(tabs.map(tab =>
+              tab.id === activeTabId
+                ? {
+                    ...tab,
+                    absolutePath: filePath,
+                    title: filePath.split(/[/\\]/).pop() || activeTab.title,
+                    isModified: false
+                  }
+                : tab
+            ));
+
+            console.log('File saved successfully to:', filePath);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to save file:', error);
+        alert('Failed to save file: ' + error);
+      }
+    } else {
+      // Fallback to browser download
+      const blob = new Blob([String(activeTab.content || '')], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const title = String(activeTab.title || 'untitled');
+      a.download = title.endsWith('.txt') ? title : title + '.txt';
+      a.click();
+      URL.revokeObjectURL(url);
+
+      // Mark as saved
+      setTabs(tabs.map(tab =>
+        tab.id === activeTabId
+          ? { ...tab, isModified: false }
+          : tab
+      ));
+    }
   };
 
   const openFile = (e) => {
@@ -2228,6 +2390,7 @@ const BetterTextPad = () => {
         content: content,
         isModified: false,
         filePath: file.name
+        // Note: Browser file input doesn't provide absolute path for security reasons
       };
       setTabs([...tabs, newTab]);
       setActiveTabId(newTabId);
@@ -2238,6 +2401,60 @@ const BetterTextPad = () => {
     };
     reader.readAsText(file);
     e.target.value = ''; // Reset input
+  };
+
+  const openFileWithDialog = async () => {
+    // Check if running in Tauri desktop mode
+    const isTauri = window.__TAURI_INTERNALS__;
+
+    if (isTauri) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const { open } = await import('@tauri-apps/plugin-dialog');
+
+        // Show open dialog
+        const filePath = await open({
+          multiple: false,
+          filters: [{
+            name: 'All Files',
+            extensions: ['*']
+          }]
+        });
+
+        if (filePath) {
+          // Read file content using Tauri
+          const content = await invoke('read_file_from_path', {
+            filePath: filePath
+          });
+
+          const fileName = filePath.split(/[/\\]/).pop() || 'untitled';
+          const newTabId = nextId;
+          const newTab = {
+            id: newTabId,
+            title: fileName,
+            content: String(content),
+            isModified: false,
+            filePath: fileName,
+            absolutePath: filePath
+          };
+
+          setTabs([...tabs, newTab]);
+          setActiveTabId(newTabId);
+          setNextId(nextId + 1);
+
+          // Trigger auto-format via useEffect
+          setPendingAutoFormat({ tabId: newTabId, content: String(content), fileName });
+
+          console.log('File opened successfully:', filePath);
+        }
+      } catch (error) {
+        console.error('Failed to open file:', error);
+        alert('Failed to open file: ' + error);
+      }
+    } else {
+      // Fallback to browser file input - trigger the hidden input
+      document.getElementById('file-input')?.click();
+    }
   };
 
   const handleFindNext = () => {
@@ -3008,13 +3225,15 @@ const BetterTextPad = () => {
     markdownSyncEditor(targetLine);
   }, [isMarkdownTab, markdownPreviewRef, getMarkdownLineCount, markdownSyncEditor]);
 
-  // JavaScript file detection
-  const isJavaScriptFile = useMemo(() => {
-    const name = (activeTab?.filePath || activeTab?.title || '').toLowerCase();
-    // Temporarily disabled - syntax highlighting has rendering issues
-    return false;
-    // return name.endsWith('.js') || name.endsWith('.jsx') || name.endsWith('.ts') || name.endsWith('.tsx');
+  // Detect if current file should have syntax highlighting
+  const syntaxLanguage = useMemo(() => {
+    const fileName = activeTab?.filePath || activeTab?.title || '';
+    return getPrismLanguage(fileName);
   }, [activeTab?.filePath, activeTab?.title]);
+
+  const shouldShowSyntaxHighlighting = useMemo(() => {
+    return syntaxLanguage !== null;
+  }, [syntaxLanguage]);
 
   const editorTopPaddingPx = '16px';
   const parsedCsvContent = useMemo(() => {
@@ -3135,21 +3354,28 @@ const BetterTextPad = () => {
     const trimmed = String(activeTab.content).trim();
     if (!trimmed) return { type: null, nodes: [] };
 
-    // Check file extension to avoid false detection of JS files as JSON
-    const fileName = (activeTab?.filePath || activeTab?.title || '').toLowerCase();
-    const isJsFile = fileName.endsWith('.js') || fileName.endsWith('.jsx') || fileName.endsWith('.ts') || fileName.endsWith('.tsx');
+    // Check file type - only show structure for JSON, XML, and YAML files
+    const fileName = activeTab?.filePath || activeTab?.title || '';
+    const fileType = getFileType(fileName);
 
-    // Only detect as JSON if it's actually valid JSON and not a JS file
-    if (!isJsFile && (trimmed.startsWith('{') || trimmed.startsWith('['))) {
+    // Only show structure tree for JSON, XML, and YAML files
+    if (fileType.type === 'json' && (trimmed.startsWith('{') || trimmed.startsWith('['))) {
       // Use looksLikeJSON to validate it's actually parseable JSON
       if (looksLikeJSON(trimmed)) {
         return { type: 'JSON', nodes: buildJSONStructure(activeTab.content) };
       }
     }
 
-    if (trimmed.startsWith('<')) {
+    if (fileType.type === 'markup' && trimmed.startsWith('<')) {
       return { type: 'XML', nodes: buildXMLStructure(activeTab.content) };
     }
+
+    // Add YAML support (basic structure detection)
+    if (fileType.type === 'config' && (fileName.endsWith('.yaml') || fileName.endsWith('.yml'))) {
+      // For now, return a simple YAML indicator - can be expanded later
+      return { type: 'YAML', nodes: [] };
+    }
+
     return { type: null, nodes: [] };
   }, [activeTab?.content, activeTab?.filePath, activeTab?.title]);
 
@@ -3873,47 +4099,26 @@ const BetterTextPad = () => {
 
         {/* Editor with inline error markers */}
         <div className="flex-1 relative bg-gray-900 overflow-auto font-mono text-sm">
-          {/* Syntax Highlighting Overlay for JavaScript */}
-          {isJavaScriptFile && (
+          {/* Syntax Highlighting Overlay using Prism.js */}
+          {shouldShowSyntaxHighlighting && syntaxLanguage && (
             <div
               ref={syntaxOverlayRef}
-              className="absolute inset-0 z-10 pointer-events-none select-none overflow-hidden font-mono text-sm"
+              className="absolute top-0 left-0 right-0 z-10 pointer-events-none select-none font-mono text-sm"
               style={{ lineHeight: '24px', whiteSpace: 'pre-wrap', wordBreak: 'break-word', willChange: 'transform', paddingTop: editorTopPaddingPx, paddingLeft: '16px', paddingRight: '16px', paddingBottom: '16px' }}
             >
-              {editorLines.map((line, lineIndex) => {
-                const tokens = highlightJavaScript(line);
-
-                // Safety check: if tokenization failed or tokens are invalid, show raw line
-                const tokenText = tokens.map(t => t?.text || '').join('');
-                const isValid = tokens.length > 0 && tokenText.length === line.length;
-
-                if (!isValid) {
-                  return (
-                    <div key={`syntax-${lineIndex}`} style={{ minHeight: '24px' }}>
-                      <span style={{ color: '#e5e7eb' }}>{line}</span>
-                    </div>
-                  );
-                }
-
-                return (
-                  <div key={`syntax-${lineIndex}`} style={{ minHeight: '24px' }}>
-                    {tokens.map((token, tokenIdx) => {
-                      let color = '#e5e7eb'; // default text color
-                      if (token.type === 'keyword') color = '#c678dd'; // purple for keywords
-                      else if (token.type === 'string') color = '#98c379'; // green for strings
-                      else if (token.type === 'comment') color = '#5c6370'; // gray for comments
-                      else if (token.type === 'number') color = '#d19a66'; // orange for numbers
-                      else if (token.type === 'function') color = '#61afef'; // blue for functions
-
-                      return (
-                        <span key={`token-${lineIndex}-${tokenIdx}`} style={{ color }}>
-                          {token.text || ''}
-                        </span>
-                      );
-                    })}
-                  </div>
-                );
-              })}
+              {editorLines.map((line, lineIndex) => (
+                <div
+                  key={`syntax-${lineIndex}`}
+                  style={{ minHeight: '24px' }}
+                  dangerouslySetInnerHTML={{
+                    __html: Prism.highlight(
+                      line || ' ',
+                      Prism.languages[syntaxLanguage] || Prism.languages.markup,
+                      syntaxLanguage
+                    )
+                  }}
+                />
+              ))}
             </div>
           )}
 
@@ -4048,10 +4253,10 @@ const BetterTextPad = () => {
             onKeyDown={handleEditorKeyDown}
             onKeyUp={() => updateCursorPosition()}
             onClick={() => { updateCursorPosition(); handleMarkdownEditorClick(); }}
-            className={`absolute inset-0 z-20 w-full h-full bg-transparent font-mono text-sm resize-none focus:outline-none caret-white ${isJavaScriptFile ? 'text-transparent' : 'text-gray-100'}`}
+            className={`absolute inset-0 z-20 w-full h-full bg-transparent font-mono text-sm resize-none focus:outline-none caret-white ${shouldShowSyntaxHighlighting ? 'text-transparent' : 'text-gray-100'}`}
             placeholder="Start typing..."
             spellCheck={false}
-            style={{ lineHeight: '24px', whiteSpace: isCSVTab ? 'pre' : 'pre-wrap', wordBreak: isCSVTab ? 'normal' : (isJavaScriptFile ? 'break-word' : 'break-all'), overflowX: isCSVTab ? 'auto' : 'hidden', paddingTop: editorTopPaddingPx, paddingLeft: '16px', paddingRight: '16px', paddingBottom: '16px' }}
+            style={{ lineHeight: '24px', whiteSpace: isCSVTab ? 'pre' : 'pre-wrap', wordBreak: isCSVTab ? 'normal' : (shouldShowSyntaxHighlighting ? 'break-word' : 'break-all'), overflowX: isCSVTab ? 'auto' : 'hidden', paddingTop: editorTopPaddingPx, paddingLeft: '16px', paddingRight: '16px', paddingBottom: '16px' }}
           />
         </div>
       </div>
@@ -4084,20 +4289,23 @@ const BetterTextPad = () => {
             New
           </button>
 
-          <label
+          <button
+            onClick={openFileWithDialog}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-sm cursor-pointer transition-colors ${theme === 'dark' ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-gray-200 hover:bg-gray-300 text-gray-800'}`}
             title="Open files: JSON, XML, CSV, HTML, JS, TXT, and more"
           >
             <Upload className="w-4 h-4" />
             Open File
-            <input
-              ref={fileInputRef}
-              type="file"
-              onChange={openFile}
-              className="hidden"
-              accept=".txt,.json,.xml,.html,.css,.js,.jsx,.md,.log,.csv"
-            />
-          </label>
+          </button>
+          {/* Hidden file input for browser fallback */}
+          <input
+            id="file-input"
+            ref={fileInputRef}
+            type="file"
+            onChange={openFile}
+            className="hidden"
+            accept=".txt,.json,.xml,.html,.css,.js,.jsx,.ts,.tsx,.md,.log,.csv,.php,.php3,.php4,.php5,.phtml,.py,.pyw,.pyx,.rb,.rbw,.java,.class,.jsp,.jspx,.go,.rs,.c,.h,.cpp,.hpp,.cc,.cxx,.cs,.swift,.kt,.kts,.scala,.m,.mm,.pl,.pm,.sh,.bash,.zsh,.fish,.lua,.r,.R,.dart,.sql,.vb,.vbs,.asm,.s,.f,.f90,.f95,.pas,.groovy,.gradle,.ini,.conf,.config,.toml,.yaml,.yml,.properties,.env,.cfg,.svg"
+          />
 
           <button
             onClick={saveFile}

@@ -1,4 +1,6 @@
 use std::process::{Command, Stdio};
+use std::fs;
+use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -262,9 +264,30 @@ async fn check_model_available(model: String) -> Result<bool, String> {
     }
 }
 
+// Save file content to a specific path
+#[tauri::command]
+async fn save_file_to_path(file_path: String, content: String) -> Result<String, String> {
+    let path = Path::new(&file_path);
+
+    fs::write(path, content)
+        .map_err(|e| format!("Failed to write file: {}", e))?;
+
+    Ok(format!("Successfully saved to {}", file_path))
+}
+
+// Read file content from a specific path
+#[tauri::command]
+async fn read_file_from_path(file_path: String) -> Result<String, String> {
+    let path = Path::new(&file_path);
+
+    fs::read_to_string(path)
+        .map_err(|e| format!("Failed to read file: {}", e))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -279,7 +302,9 @@ pub fn run() {
             check_ollama_status,
             pull_ollama_model,
             fix_with_ollama,
-            check_model_available
+            check_model_available,
+            save_file_to_path,
+            read_file_from_path
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
