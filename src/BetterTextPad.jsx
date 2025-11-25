@@ -5061,34 +5061,85 @@ const BetterTextPad = () => {
           </>
         ) : (
           <div className={`flex items-center justify-center h-full w-full ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
-            <div className="text-center max-w-md px-6">
+            <div className="text-center max-w-2xl px-6">
               <FileText className="w-16 h-16 mx-auto mb-4 opacity-40" />
-              <p className={`text-xl font-bold mb-2 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>Welcome to Better Text Pad</p>
-              <p className={`text-sm mb-4 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
-                A powerful code & text editor with support for JSON, XML, CSV, and TXT files
+              <p className={`text-2xl font-bold mb-2 ${theme === 'dark' ? 'text-gray-200' : 'text-gray-800'}`}>Welcome to Better Text Pad</p>
+              <p className={`text-sm mb-6 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
+                A powerful code & text editor with syntax highlighting, AI-assisted error fixing, and more
               </p>
-              <div className={`text-xs space-y-2 text-left ${theme === 'dark' ? 'text-gray-500' : 'text-gray-500'}`}>
-                <div className="flex items-center gap-2">
-                  <span className="text-green-500">✓</span>
-                  <span>JSON formatter and validator</span>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3 text-left mb-6">
+                {/* Column 1: File Support & Editing */}
+                <div>
+                  <p className={`text-xs font-semibold mb-2 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>📝 File Support & Editing</p>
+                  <div className={`text-xs space-y-1.5 ${theme === 'dark' ? 'text-gray-500' : 'text-gray-500'}`}>
+                    <div className="flex items-center gap-2">
+                      <span className="text-green-500">✓</span>
+                      <span>40+ file types with syntax highlighting</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-green-500">✓</span>
+                      <span>JSON/XML formatter & validator</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-green-500">✓</span>
+                      <span>Structure tree for JSON, XML, YAML</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-green-500">✓</span>
+                      <span>CSV editor with live table preview</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-green-500">✓</span>
+                      <span>Multi-tab editing with auto-save</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-green-500">✓</span>
+                      <span>Save to original file (preserves extensions)</span>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-green-500">✓</span>
-                  <span>XML editor with syntax highlighting</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-green-500">✓</span>
-                  <span>CSV file editor with live preview</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-green-500">✓</span>
-                  <span>Text files, logs, markdown & more</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-green-500">✓</span>
-                  <span>Multi-tab editing and auto-save</span>
+
+                {/* Column 2: AI & Advanced Features */}
+                <div>
+                  <p className={`text-xs font-semibold mb-2 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>🤖 AI & Advanced Features</p>
+                  <div className={`text-xs space-y-1.5 ${theme === 'dark' ? 'text-gray-500' : 'text-gray-500'}`}>
+                    <div className="flex items-center gap-2">
+                      <span className="text-green-500">✓</span>
+                      <span>AI-assisted error fixing (JSON/XML)</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-green-500">✓</span>
+                      <span>Multiple AI providers (Ollama, Groq, OpenAI, Claude)</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-green-500">✓</span>
+                      <span>Side-by-side diff viewer for changes</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-green-500">✓</span>
+                      <span>Find & replace with regex support</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-green-500">✓</span>
+                      <span>Notes & folders organization</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-green-500">✓</span>
+                      <span>Todo list with categorization</span>
+                    </div>
+                  </div>
                 </div>
               </div>
+
+              <div className={`text-xs mb-4 ${theme === 'dark' ? 'text-gray-500' : 'text-gray-500'}`}>
+                <p className="mb-1"><strong>Supported Languages:</strong></p>
+                <p className="leading-relaxed">
+                  JavaScript, TypeScript, JSX/TSX, Python, Java, PHP, Ruby, Go, Rust, C/C++, C#, Swift, Kotlin,
+                  Scala, Dart, SQL, Bash, Lua, R, JSON, XML, YAML, TOML, Markdown, CSS, HTML, and more
+                </p>
+              </div>
+
               <p className={`text-sm mt-6 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
                 Click{' '}
                 <button
@@ -5099,7 +5150,7 @@ const BetterTextPad = () => {
                 </button>
                 {' '}or{' '}
                 <button
-                  onClick={() => fileInputRef.current?.click()}
+                  onClick={openFileWithDialog}
                   className={`font-semibold underline hover:no-underline cursor-pointer ${theme === 'dark' ? 'text-blue-400 hover:text-blue-300' : 'text-blue-600 hover:text-blue-700'}`}
                 >
                   Open File
