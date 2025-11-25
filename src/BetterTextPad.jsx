@@ -136,6 +136,100 @@ const getFileType = (filename = '') => {
   return { type: 'text', shouldAutoFormat: true };
 };
 
+// Detect language from content patterns
+const detectLanguageFromContent = (content = '') => {
+  if (!content || content.trim().length === 0) return null;
+
+  const trimmed = content.trim();
+  const firstLine = trimmed.split('\n')[0].trim();
+
+  // JSON - starts with { or [
+  if ((trimmed.startsWith('{') || trimmed.startsWith('[')) &&
+      (trimmed.includes('"') || trimmed.includes(':'))) {
+    try {
+      JSON.parse(trimmed);
+      return 'json';
+    } catch (e) {
+      // Might still be JSON being typed
+      if (trimmed.match(/^\s*[\{\[]/)) return 'json';
+    }
+  }
+
+  // XML/HTML - starts with < and has tags
+  if (trimmed.startsWith('<') && (trimmed.includes('</') || trimmed.includes('/>'))) {
+    if (trimmed.match(/<(!DOCTYPE html|html|head|body|div|span|p|a|img)/i)) {
+      return 'markup'; // HTML
+    }
+    return 'markup'; // XML
+  }
+
+  // PHP - starts with <?php
+  if (trimmed.startsWith('<?php') || firstLine.includes('<?php')) {
+    return 'php';
+  }
+
+  // Python - common patterns
+  if (firstLine.startsWith('#!') && firstLine.includes('python')) return 'python';
+  if (trimmed.match(/^(import |from .+ import |def |class |if __name__)/m)) return 'python';
+
+  // JavaScript/TypeScript - common patterns
+  if (trimmed.match(/^(import .+ from|export (default |const |function |class )|const .+ = |function |class |\/\/ |\/\*)/m)) {
+    if (trimmed.includes(': ') && trimmed.match(/:\s*(string|number|boolean|any|void)/)) {
+      return 'typescript'; // Has type annotations
+    }
+    if (trimmed.match(/<[A-Z][a-zA-Z]*.*>/)) {
+      return 'jsx'; // Has JSX
+    }
+    return 'javascript';
+  }
+
+  // CSS - has selectors and properties
+  if (trimmed.match(/[.#\w-]+\s*\{[\s\S]*:\s*[\s\S]*;?[\s\S]*\}/)) {
+    return 'css';
+  }
+
+  // SQL - common keywords
+  if (trimmed.match(/^(SELECT|INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|FROM|WHERE|JOIN)\s+/im)) {
+    return 'sql';
+  }
+
+  // Shell/Bash - shebang or common commands
+  if (firstLine.startsWith('#!') && firstLine.match(/\/(bash|sh|zsh|fish)/)) return 'bash';
+  if (trimmed.match(/^(echo|cd|ls|mkdir|rm|cp|mv|grep|awk|sed)\s+/m)) return 'bash';
+
+  // Ruby - common patterns
+  if (firstLine.startsWith('#!') && firstLine.includes('ruby')) return 'ruby';
+  if (trimmed.match(/^(require |class .+ < |def |module |puts |end$)/m)) return 'ruby';
+
+  // Go - package declaration
+  if (trimmed.match(/^package\s+\w+/m) && trimmed.includes('func ')) return 'go';
+
+  // Rust - common patterns
+  if (trimmed.match(/^(fn |use |pub |struct |impl |mod |let mut )/m)) return 'rust';
+
+  // Java/C#/C++ - common patterns
+  if (trimmed.match(/^(public |private |protected |class |interface |namespace )/m)) {
+    if (trimmed.includes('namespace')) return 'csharp';
+    if (trimmed.includes('#include')) return 'cpp';
+    return 'java';
+  }
+
+  // C - #include and common patterns
+  if (trimmed.match(/^#include\s*[<"]/m) && !trimmed.match(/^(class |namespace )/m)) {
+    return trimmed.includes('iostream') ? 'cpp' : 'c';
+  }
+
+  // YAML - starts with --- or has key: value
+  if (trimmed.startsWith('---') || trimmed.match(/^[\w-]+:\s*[\w\s]/m)) {
+    if (!trimmed.includes('{') && !trimmed.includes(';')) return 'yaml';
+  }
+
+  // Markdown - has markdown syntax
+  if (trimmed.match(/^(#{1,6}\s|```|\*\*|__|\[.+\]\(.+\))/m)) return 'markdown';
+
+  return null;
+};
+
 // Get Prism language identifier from filename
 const getPrismLanguage = (filename = '') => {
   const name = (filename || '').toLowerCase();
@@ -2847,7 +2941,7 @@ const BetterTextPad = () => {
       return;
     }
 
-    // XML auto-closing tags
+    // XML auto-closing tags - only for XML/HTML files
     if (event.key === '>') {
       if (!autoPairingEnabled) {
         return;
@@ -2863,23 +2957,31 @@ const BetterTextPad = () => {
         return;
       }
 
-      // Auto-close XML tags
-      const before = value.substring(0, selectionStart);
-      // Match opening tag pattern: <tagname or <tagname attr="value"
-      const tagMatch = before.match(/<([a-zA-Z][a-zA-Z0-9]*)[^>]*$/);
+      // Only auto-close tags for XML/HTML files
+      const fileName = activeTab?.filePath || activeTab?.title || '';
+      const fileExt = fileName.includes('.') ? fileName.split('.').pop().toLowerCase() : '';
+      const isXMLOrHTML = ['xml', 'html', 'htm', 'svg', 'xhtml', 'jsp', 'jspx'].includes(fileExt) ||
+                          (syntaxLanguage === 'markup');
 
-      if (tagMatch) {
-        const tagName = tagMatch[1];
-        // Don't auto-close self-closing tags or if already has a closing tag nearby
-        const selfClosingTags = ['br', 'hr', 'img', 'input', 'meta', 'link', 'area', 'base', 'col', 'embed', 'param', 'source', 'track', 'wbr'];
+      if (isXMLOrHTML) {
+        // Auto-close XML tags
+        const before = value.substring(0, selectionStart);
+        // Match opening tag pattern: <tagname or <tagname attr="value"
+        const tagMatch = before.match(/<([a-zA-Z][a-zA-Z0-9]*)[^>]*$/);
 
-        if (!selfClosingTags.includes(tagName.toLowerCase())) {
-          // Check if we're not in a self-closing tag (ending with /)
-          if (!before.endsWith('/')) {
-            event.preventDefault();
-            const closingTag = `</${tagName}>`;
-            applyTextEdit('>' + closingTag, 1);
-            return;
+        if (tagMatch) {
+          const tagName = tagMatch[1];
+          // Don't auto-close self-closing tags or if already has a closing tag nearby
+          const selfClosingTags = ['br', 'hr', 'img', 'input', 'meta', 'link', 'area', 'base', 'col', 'embed', 'param', 'source', 'track', 'wbr'];
+
+          if (!selfClosingTags.includes(tagName.toLowerCase())) {
+            // Check if we're not in a self-closing tag (ending with /)
+            if (!before.endsWith('/')) {
+              event.preventDefault();
+              const closingTag = `</${tagName}>`;
+              applyTextEdit('>' + closingTag, 1);
+              return;
+            }
           }
         }
       }
@@ -3407,8 +3509,16 @@ const BetterTextPad = () => {
   // Detect if current file should have syntax highlighting
   const syntaxLanguage = useMemo(() => {
     const fileName = activeTab?.filePath || activeTab?.title || '';
-    return getPrismLanguage(fileName);
-  }, [activeTab?.filePath, activeTab?.title]);
+    const content = activeTab?.content || '';
+
+    // First try filename-based detection
+    const filenameLang = getPrismLanguage(fileName);
+    if (filenameLang) return filenameLang;
+
+    // If no filename match, try content-based detection
+    const contentLang = detectLanguageFromContent(content);
+    return contentLang;
+  }, [activeTab?.filePath, activeTab?.title, activeTab?.content]);
 
   const shouldShowSyntaxHighlighting = useMemo(() => {
     return syntaxLanguage !== null;
