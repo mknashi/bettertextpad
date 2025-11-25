@@ -111,7 +111,7 @@ const AISettingsModal = ({ settings, onSave, onClose, theme, isDesktop, desktopA
   };
 
   // Open API key page in browser
-  const openApiKeyPage = (provider) => {
+  const openApiKeyPage = async (provider) => {
     const urls = {
       groq: 'https://console.groq.com/keys',
       openai: 'https://platform.openai.com/api-keys',
@@ -119,8 +119,85 @@ const AISettingsModal = ({ settings, onSave, onClose, theme, isDesktop, desktopA
     };
 
     const url = urls[provider];
-    if (url) {
-      window.open(url, '_blank', 'noopener,noreferrer');
+    if (!url) return;
+
+    if (isDesktop || window?.__TAURI__) {
+      const shellOpen = window?.__TAURI__?.shell?.open;
+      if (typeof shellOpen === 'function') {
+        try {
+          console.info('[AISettingsModal] Opening via tauri.shell.open');
+          await shellOpen(url);
+          return;
+        } catch (error) {
+          console.warn('[AISettingsModal] Failed via tauri.shell.open', error);
+        }
+      }
+
+      const tauriCoreInvoke = window?.__TAURI__?.core?.invoke;
+      if (typeof tauriCoreInvoke === 'function') {
+        try {
+          console.info('[AISettingsModal] Opening via tauri.core.invoke plugin:shell|open');
+          await tauriCoreInvoke('plugin:shell|open', { path: url });
+          return;
+        } catch (error) {
+          console.warn('[AISettingsModal] Failed via tauri.core.invoke', error);
+        }
+      }
+
+      const tauriInvokeV1 = window?.__TAURI__?.invoke;
+      if (typeof tauriInvokeV1 === 'function') {
+        try {
+          console.info('[AISettingsModal] Opening via tauri.invoke plugin:shell|open');
+          await tauriInvokeV1('plugin:shell|open', { path: url });
+          return;
+        } catch (error) {
+          console.warn('[AISettingsModal] Failed via tauri.invoke v1', error);
+        }
+      }
+
+      const tauriInvokeLegacy = window?.__TAURI_INVOKE__;
+      if (typeof tauriInvokeLegacy === 'function') {
+        try {
+          console.info('[AISettingsModal] Opening via __TAURI_INVOKE__ plugin:shell|open');
+          await tauriInvokeLegacy('plugin:shell|open', { path: url });
+          return;
+        } catch (error) {
+          console.warn('[AISettingsModal] Failed via __TAURI_INVOKE__', error);
+        }
+      }
+
+      // Additional fallback for older shell command name
+      const tauriShellInvoke = window?.__TAURI__?.core?.invoke;
+      if (typeof tauriShellInvoke === 'function') {
+        try {
+          console.info('[AISettingsModal] Opening via tauri.core.invoke shell:open');
+          await tauriShellInvoke('shell:open', { path: url });
+          return;
+        } catch (error) {
+          console.warn('[AISettingsModal] Failed via tauri.core.invoke shell:open', error);
+        }
+      }
+    }
+
+    console.info('[AISettingsModal] Falling back to window.open for API key link');
+    const opened = window.open(url, '_blank', 'noopener,noreferrer');
+    if (opened) return;
+
+    // Try anchor click fallback (helps bypass some blockers)
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.target = '_blank';
+    anchor.rel = 'noreferrer noopener';
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+
+    // If still blocked, ask user before replacing the app view
+    const confirmed = window.confirm('Unable to open your browser automatically. Open the API key page in this window instead?');
+    if (confirmed) {
+      window.location.href = url;
+    } else {
+      console.warn('[AISettingsModal] window.open and anchor click were blocked; please copy this link:', url);
     }
   };
 
