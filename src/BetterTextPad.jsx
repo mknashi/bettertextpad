@@ -2322,13 +2322,9 @@ const BetterTextPad = () => {
 
           console.log('File saved successfully to:', activeTab.absolutePath);
         } else {
-          // Show save dialog to get the path
+          // Show save dialog to get the path - no filters to preserve original extension
           const filePath = await save({
-            defaultPath: activeTab.title || 'untitled.txt',
-            filters: [{
-              name: 'All Files',
-              extensions: ['*']
-            }]
+            defaultPath: activeTab.title || 'untitled.txt'
           });
 
           if (filePath) {
@@ -2357,13 +2353,73 @@ const BetterTextPad = () => {
         alert('Failed to save file: ' + error);
       }
     } else {
-      // Fallback to browser download
+      // Browser mode - use File System Access API if available
+      try {
+        // Check if browser supports File System Access API
+        if ('showSaveFilePicker' in window) {
+          // If we have a file handle from previous save/open, try to use it
+          if (activeTab.fileHandle) {
+            try {
+              const writable = await activeTab.fileHandle.createWritable();
+              await writable.write(String(activeTab.content || ''));
+              await writable.close();
+
+              // Mark as saved
+              setTabs(tabs.map(tab =>
+                tab.id === activeTabId
+                  ? { ...tab, isModified: false }
+                  : tab
+              ));
+              console.log('File saved using existing handle');
+              return;
+            } catch (err) {
+              // If we can't write (permissions denied), fall through to show save picker
+              console.log('Cannot write to existing handle, showing save picker');
+            }
+          }
+
+          // Show save picker
+          const handle = await window.showSaveFilePicker({
+            suggestedName: activeTab.title || 'untitled.txt',
+            types: [{
+              description: 'All Files',
+              accept: { '*/*': ['*'] }
+            }]
+          });
+
+          const writable = await handle.createWritable();
+          await writable.write(String(activeTab.content || ''));
+          await writable.close();
+
+          // Update tab with file handle and mark as saved
+          setTabs(tabs.map(tab =>
+            tab.id === activeTabId
+              ? {
+                  ...tab,
+                  fileHandle: handle,
+                  title: handle.name,
+                  isModified: false
+                }
+              : tab
+          ));
+          console.log('File saved using File System Access API');
+          return;
+        }
+      } catch (err) {
+        // User cancelled or API not supported, fall through to download
+        if (err.name !== 'AbortError') {
+          console.log('File System Access API error:', err);
+        }
+      }
+
+      // Fallback to browser download with original extension
       const blob = new Blob([String(activeTab.content || '')], { type: 'text/plain' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
       const title = String(activeTab.title || 'untitled');
-      a.download = title.endsWith('.txt') ? title : title + '.txt';
+      // Preserve original extension instead of forcing .txt
+      a.download = title;
       a.click();
       URL.revokeObjectURL(url);
 
@@ -2412,13 +2468,9 @@ const BetterTextPad = () => {
         const { invoke } = await import('@tauri-apps/api/core');
         const { open } = await import('@tauri-apps/plugin-dialog');
 
-        // Show open dialog
+        // Show open dialog - no filters to allow all file types
         const filePath = await open({
-          multiple: false,
-          filters: [{
-            name: 'All Files',
-            extensions: ['*']
-          }]
+          multiple: false
         });
 
         if (filePath) {
@@ -2452,6 +2504,44 @@ const BetterTextPad = () => {
         alert('Failed to open file: ' + error);
       }
     } else {
+      // Browser mode - use File System Access API if available
+      try {
+        if ('showOpenFilePicker' in window) {
+          const [fileHandle] = await window.showOpenFilePicker({
+            multiple: false
+          });
+
+          const file = await fileHandle.getFile();
+          const content = await file.text();
+
+          const newTabId = nextId;
+          const newTab = {
+            id: newTabId,
+            title: file.name,
+            content: content,
+            isModified: false,
+            filePath: file.name,
+            fileHandle: fileHandle // Store handle for later saving
+          };
+
+          setTabs([...tabs, newTab]);
+          setActiveTabId(newTabId);
+          setNextId(nextId + 1);
+
+          // Trigger auto-format via useEffect
+          setPendingAutoFormat({ tabId: newTabId, content, fileName: file.name });
+
+          console.log('File opened using File System Access API:', file.name);
+          return;
+        }
+      } catch (err) {
+        // User cancelled or API not supported
+        if (err.name !== 'AbortError') {
+          console.log('File System Access API error:', err);
+        }
+        // Fall through to trigger the hidden input
+      }
+
       // Fallback to browser file input - trigger the hidden input
       document.getElementById('file-input')?.click();
     }
