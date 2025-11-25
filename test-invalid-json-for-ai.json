@@ -1,0 +1,14 @@
+{
+  "name": "Test User",
+  "age": 30,
+  "email": "test@example.com",
+  "address": {
+    "street": "123 Main St",
+    "city": "New York",
+    "zip": "10001"
+  },
+  "hobbies": ["reading", "coding", "gaming",],
+  'invalidKey': 'single quotes are not allowed',
+  "missingComma": "here"
+  "anotherKey": "value"
+}

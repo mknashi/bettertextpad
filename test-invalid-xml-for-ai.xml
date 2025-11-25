@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bookstore>
+  <book category="fiction">
+    <title>Harry Potter</title>
+    <author>J.K. Rowling</author>
+    <price>29.99</price>
+  </book>
+  <book category="science">
+    <title>A Brief History of Time
+    <author>Stephen Hawking</author>
+    <price>19.99</price>
+  <book>
+  <book category="programming">
+    <title>Clean Code</title>
+    <author>Robert Martin</author>
+    <price>39.99</price>
+  </boo>
+</bookstore>
