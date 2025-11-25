@@ -3433,6 +3433,21 @@ const BetterTextPad = () => {
 
   const activeTab = tabs.find(t => t.id === activeTabId);
   const editorLines = activeTab && activeTab.content ? String(activeTab.content).split('\n') : [];
+
+  // Detect if current file should have syntax highlighting - needs to be before CSV/Markdown detection
+  const syntaxLanguage = useMemo(() => {
+    const fileName = activeTab?.filePath || activeTab?.title || '';
+    const content = activeTab?.content || '';
+
+    // First try filename-based detection
+    const filenameLang = getPrismLanguage(fileName);
+    if (filenameLang) return filenameLang;
+
+    // If no filename match, try content-based detection
+    const contentLang = detectLanguageFromContent(content);
+    return contentLang;
+  }, [activeTab?.filePath, activeTab?.title, activeTab?.content]);
+
   const isCsvFileName = useMemo(() => {
     const name = (activeTab?.filePath || activeTab?.title || '').toLowerCase();
     return name.endsWith('.csv');
@@ -3440,8 +3455,10 @@ const BetterTextPad = () => {
   const isCsvByContent = useMemo(() => {
     if (isCsvFileName) return false;
     if (!activeTab?.content) return false;
+    // Don't detect CSV if we already have a recognized programming language from filename or content
+    if (syntaxLanguage && syntaxLanguage !== 'markdown') return false;
     return detectCSVContent(activeTab.content);
-  }, [activeTab?.content, isCsvFileName]);
+  }, [activeTab?.content, isCsvFileName, syntaxLanguage]);
   const shouldAutoCsv = useMemo(() => {
     if (isCsvFileName) return true;
     const tabId = activeTab?.id;
@@ -3458,8 +3475,10 @@ const BetterTextPad = () => {
   const isMarkdownByContent = useMemo(() => {
     if (isMarkdownFileName) return false;
     if (!activeTab?.content) return false;
+    // Don't detect Markdown if we already have a recognized programming language from filename or content
+    if (syntaxLanguage && syntaxLanguage !== 'markdown') return false;
     return detectMarkdownContent(activeTab.content, activeTab?.title || '');
-  }, [activeTab?.content, activeTab?.title, isMarkdownFileName]);
+  }, [activeTab?.content, activeTab?.title, isMarkdownFileName, syntaxLanguage]);
   const shouldAutoMarkdown = useMemo(() => {
     if (isMarkdownFileName) return true;
     return isMarkdownByContent;
@@ -3505,20 +3524,6 @@ const BetterTextPad = () => {
     const targetLine = Math.min(totalLines, Math.max(1, Math.round(ratio * Math.max(totalLines - 1, 0)) + 1));
     markdownSyncEditor(targetLine);
   }, [isMarkdownTab, markdownPreviewRef, getMarkdownLineCount, markdownSyncEditor]);
-
-  // Detect if current file should have syntax highlighting
-  const syntaxLanguage = useMemo(() => {
-    const fileName = activeTab?.filePath || activeTab?.title || '';
-    const content = activeTab?.content || '';
-
-    // First try filename-based detection
-    const filenameLang = getPrismLanguage(fileName);
-    if (filenameLang) return filenameLang;
-
-    // If no filename match, try content-based detection
-    const contentLang = detectLanguageFromContent(content);
-    return contentLang;
-  }, [activeTab?.filePath, activeTab?.title, activeTab?.content]);
 
   const shouldShowSyntaxHighlighting = useMemo(() => {
     return syntaxLanguage !== null;
