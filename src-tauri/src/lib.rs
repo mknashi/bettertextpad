@@ -284,6 +284,14 @@ async fn read_file_from_path(file_path: String) -> Result<String, String> {
         .map_err(|e| format!("Failed to read file: {}", e))
 }
 
+// Get command line arguments (for file associations)
+#[tauri::command]
+async fn get_cli_args() -> Result<Vec<String>, String> {
+    let args: Vec<String> = std::env::args().collect();
+    // Skip the first argument (the executable path)
+    Ok(args.into_iter().skip(1).collect())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -304,7 +312,8 @@ pub fn run() {
             fix_with_ollama,
             check_model_available,
             save_file_to_path,
-            read_file_from_path
+            read_file_from_path,
+            get_cli_args
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

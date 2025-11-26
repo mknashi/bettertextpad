@@ -43,6 +43,133 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
+    ],
+    "fileAssociations": [
+      {
+        "ext": ["txt"],
+        "name": "Text File",
+        "role": "Editor"
+      },
+      {
+        "ext": ["json"],
+        "name": "JSON File",
+        "role": "Editor"
+      },
+      {
+        "ext": ["xml"],
+        "name": "XML File",
+        "role": "Editor"
+      },
+      {
+        "ext": ["html", "htm"],
+        "name": "HTML File",
+        "role": "Editor"
+      },
+      {
+        "ext": ["css"],
+        "name": "CSS File",
+        "role": "Editor"
+      },
+      {
+        "ext": ["js", "jsx"],
+        "name": "JavaScript File",
+        "role": "Editor"
+      },
+      {
+        "ext": ["ts", "tsx"],
+        "name": "TypeScript File",
+        "role": "Editor"
+      },
+      {
+        "ext": ["md", "markdown"],
+        "name": "Markdown File",
+        "role": "Editor"
+      },
+      {
+        "ext": ["log"],
+        "name": "Log File",
+        "role": "Editor"
+      },
+      {
+        "ext": ["csv"],
+        "name": "CSV File",
+        "role": "Editor"
+      },
+      {
+        "ext": ["php"],
+        "name": "PHP File",
+        "role": "Editor"
+      },
+      {
+        "ext": ["py"],
+        "name": "Python File",
+        "role": "Editor"
+      },
+      {
+        "ext": ["rb"],
+        "name": "Ruby File",
+        "role": "Editor"
+      },
+      {
+        "ext": ["java"],
+        "name": "Java File",
+        "role": "Editor"
+      },
+      {
+        "ext": ["go"],
+        "name": "Go File",
+        "role": "Editor"
+      },
+      {
+        "ext": ["rs"],
+        "name": "Rust File",
+        "role": "Editor"
+      },
+      {
+        "ext": ["c", "h"],
+        "name": "C File",
+        "role": "Editor"
+      },
+      {
+        "ext": ["cpp", "hpp", "cc", "cxx"],
+        "name": "C++ File",
+        "role": "Editor"
+      },
+      {
+        "ext": ["cs"],
+        "name": "C# File",
+        "role": "Editor"
+      },
+      {
+        "ext": ["swift"],
+        "name": "Swift File",
+        "role": "Editor"
+      },
+      {
+        "ext": ["kt", "kts"],
+        "name": "Kotlin File",
+        "role": "Editor"
+      },
+      {
+        "ext": ["yaml", "yml"],
+        "name": "YAML File",
+        "role": "Editor"
+      },
+      {
+        "ext": ["toml"],
+        "name": "TOML File",
+        "role": "Editor"
+      },
+      {
+        "ext": ["ini", "conf", "config"],
+        "name": "Configuration File",
+        "role": "Editor"
+      },
+      {
+        "ext": ["sql"],
+        "name": "SQL File",
+        "role": "Editor"
+      }
     ]
   }
 }

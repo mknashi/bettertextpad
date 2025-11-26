@@ -167,13 +167,13 @@ const CodeMirrorEditor = forwardRef(({
         }, { dark: true })
       : EditorView.theme({
           '.cm-selectionBackground': {
-            backgroundColor: 'rgba(56, 139, 253, 0.4) !important',
+            backgroundColor: '#3b82f6 !important',
           },
           '&.cm-focused .cm-selectionBackground': {
-            backgroundColor: 'rgba(56, 139, 253, 0.4) !important',
+            backgroundColor: '#3b82f6 !important',
           },
           '.cm-selectionMatch': {
-            backgroundColor: 'rgba(56, 139, 253, 0.2) !important',
+            backgroundColor: 'rgba(59, 130, 246, 0.3) !important',
           }
         });
 
@@ -290,17 +290,17 @@ const CodeMirrorEditor = forwardRef(({
         .codemirror-wrapper .cm-focused .cm-selectionBackground,
         .codemirror-wrapper .cm-editor .cm-selectionBackground,
         .codemirror-wrapper .cm-content .cm-selectionBackground {
-          background-color: ${theme === 'dark' ? '#fbbf24' : 'rgba(56, 139, 253, 0.4)'} !important;
-          color: ${theme === 'dark' ? '#000000' : 'inherit'} !important;
+          background-color: ${theme === 'dark' ? '#fbbf24' : '#3b82f6'} !important;
+          color: ${theme === 'dark' ? '#000000' : '#ffffff'} !important;
         }
         .codemirror-wrapper .cm-selectionMatch {
-          background-color: ${theme === 'dark' ? 'rgba(251, 191, 36, 0.4)' : 'rgba(56, 139, 253, 0.2)'} !important;
+          background-color: ${theme === 'dark' ? 'rgba(251, 191, 36, 0.4)' : 'rgba(59, 130, 246, 0.3)'} !important;
         }
         .codemirror-wrapper .cm-vim-primary ::selection,
         .codemirror-wrapper .cm-line ::selection,
         .codemirror-wrapper .cm-content ::selection {
-          background-color: ${theme === 'dark' ? '#fbbf24' : 'rgba(56, 139, 253, 0.4)'} !important;
-          color: ${theme === 'dark' ? '#000000' : 'inherit'} !important;
+          background-color: ${theme === 'dark' ? '#fbbf24' : '#3b82f6'} !important;
+          color: ${theme === 'dark' ? '#000000' : '#ffffff'} !important;
         }
       `}</style>
       <CodeMirror

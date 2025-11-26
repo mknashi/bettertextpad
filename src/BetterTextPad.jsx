@@ -945,8 +945,10 @@ const loadThemePreference = () => {
   }
 };
 
-const RichTextEditor = ({ value, onChange }) => {
+const RichTextEditor = ({ value, onChange, aiService, aiSettings }) => {
   const editorRef = useRef(null);
+  const [isAIProcessing, setIsAIProcessing] = useState(false);
+  const [showAIMenu, setShowAIMenu] = useState(false);
 
   useEffect(() => {
     if (!editorRef.current) return;
@@ -983,12 +985,101 @@ const RichTextEditor = ({ value, onChange }) => {
     onChange(linkified);
   };
 
+  const handleAITransform = async (action) => {
+    if (!aiService || !editorRef.current) return;
+
+    setIsAIProcessing(true);
+    setShowAIMenu(false);
+
+    try {
+      // Get text content without HTML tags
+      const textContent = editorRef.current.innerText || editorRef.current.textContent || '';
+      if (!textContent.trim()) {
+        alert('Please enter some text first');
+        return;
+      }
+
+      const transformed = await aiService.transformText(textContent, action, aiSettings);
+
+      // Update editor with transformed text (preserve as plain text for simplicity)
+      editorRef.current.innerText = transformed;
+      onChange(transformed);
+    } catch (error) {
+      console.error('AI transformation error:', error);
+      alert(`AI transformation failed: ${error.message}`);
+    } finally {
+      setIsAIProcessing(false);
+    }
+  };
+
   return (
     <div className="bg-gray-900 border border-gray-700 rounded">
-      <div className="flex items-center gap-2 border-b border-gray-800 px-2 py-1 text-gray-400">
-        <button type="button" onClick={() => exec('bold')} className="p-1 hover:text-white" title="Bold"><Bold className="w-4 h-4" /></button>
-        <button type="button" onClick={() => exec('italic')} className="p-1 hover:text-white" title="Italic"><Italic className="w-4 h-4" /></button>
-        <button type="button" onClick={() => exec('underline')} className="p-1 hover:text-white" title="Underline"><Underline className="w-4 h-4" /></button>
+      <div className="flex items-center justify-between gap-2 border-b border-gray-800 px-2 py-1 text-gray-400">
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={() => exec('bold')} className="p-1 hover:text-white" title="Bold"><Bold className="w-4 h-4" /></button>
+          <button type="button" onClick={() => exec('italic')} className="p-1 hover:text-white" title="Italic"><Italic className="w-4 h-4" /></button>
+          <button type="button" onClick={() => exec('underline')} className="p-1 hover:text-white" title="Underline"><Underline className="w-4 h-4" /></button>
+        </div>
+        {aiService && (
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowAIMenu(!showAIMenu)}
+              disabled={isAIProcessing}
+              className={`flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors ${isAIProcessing ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-800 hover:text-white'}`}
+              title="AI Tools"
+            >
+              {isAIProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+              <span>AI</span>
+            </button>
+            {showAIMenu && (
+              <div className="absolute right-0 top-full mt-1 bg-gray-800 border border-gray-700 rounded shadow-lg z-10 min-w-[160px]">
+                <button
+                  type="button"
+                  onClick={() => handleAITransform('improve')}
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-gray-700 text-gray-200"
+                >
+                  Improve Writing
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleAITransform('rewrite')}
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-gray-700 text-gray-200"
+                >
+                  Rewrite
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleAITransform('rephrase')}
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-gray-700 text-gray-200"
+                >
+                  Rephrase
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleAITransform('fix-grammar')}
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-gray-700 text-gray-200"
+                >
+                  Fix Grammar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleAITransform('summarize')}
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-gray-700 text-gray-200"
+                >
+                  Summarize
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleAITransform('expand')}
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-gray-700 text-gray-200"
+                >
+                  Expand
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
       <div
         ref={editorRef}
@@ -1518,7 +1609,7 @@ const BetterTextPad = () => {
       id: nextId,
       title: `Untitled-${nextId}`,
       content: '',
-      isModified: false,
+      isModified: true,
       filePath: null
     };
     setTabs([...tabs, newTab]);
@@ -4433,6 +4524,8 @@ const BetterTextPad = () => {
               <RichTextEditor
                 value={modalNote.content}
                 onChange={(value) => updateNote(modalNote.id, { content: value })}
+                aiService={aiService}
+                aiSettings={aiSettings}
               />
               {modalNote.images?.length ? (
                 <div className="grid grid-cols-2 gap-3">
@@ -4733,8 +4826,8 @@ const BetterTextPad = () => {
 
           <button
             onClick={saveFile}
-            disabled={!activeTab}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-sm transition-colors ${!activeTab ? 'bg-gray-600 cursor-not-allowed opacity-50' : theme === 'dark' ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-gray-200 hover:bg-gray-300 text-gray-800'}`}
+            disabled={!activeTab || !activeTab.isModified}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-sm transition-colors ${(!activeTab || !activeTab.isModified) ? 'bg-gray-600 cursor-not-allowed opacity-50' : theme === 'dark' ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-gray-200 hover:bg-gray-300 text-gray-800'}`}
             title="Save File (Ctrl/Cmd+S)"
           >
             <Save className="w-4 h-4" />

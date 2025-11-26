@@ -348,6 +348,132 @@ Fixed ${errorDetails.type}:`;
     }
   }
 
+  // Transform text with AI (for notes editor)
+  async transformText(text, action, settings) {
+    const { provider, groqApiKey, groqModel, openaiApiKey, openaiModel, claudeApiKey, claudeModel } = settings;
+
+    const prompts = {
+      rewrite: `Rewrite the following text to be clearer and more concise while maintaining the original meaning:\n\n${text}`,
+      rephrase: `Rephrase the following text using different words while keeping the same meaning:\n\n${text}`,
+      improve: `Improve the following text by making it more professional and well-structured:\n\n${text}`,
+      summarize: `Summarize the following text concisely:\n\n${text}`,
+      expand: `Expand on the following text with more details and examples:\n\n${text}`,
+      'fix-grammar': `Fix any grammar and spelling errors in the following text:\n\n${text}`
+    };
+
+    const prompt = prompts[action] || `Process the following text:\n\n${text}`;
+
+    try {
+      // Groq mode
+      if (provider === AI_PROVIDERS.GROQ) {
+        if (!groqApiKey) throw new Error('Groq API key is required');
+
+        const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${groqApiKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            model: groqModel || GROQ_MODELS['llama-3.3-70b'].id,
+            messages: [
+              {
+                role: 'system',
+                content: 'You are a helpful writing assistant. Output only the transformed text, no explanations.'
+              },
+              {
+                role: 'user',
+                content: prompt
+              }
+            ],
+            temperature: 0.7,
+            max_tokens: 4000
+          })
+        });
+
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({ error: { message: 'Unknown error' } }));
+          throw new Error(error.error?.message || `Groq API error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        return data.choices[0]?.message?.content?.trim() || text;
+      }
+
+      // OpenAI mode
+      if (provider === AI_PROVIDERS.OPENAI) {
+        if (!openaiApiKey) throw new Error('OpenAI API key is required');
+
+        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${openaiApiKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            model: openaiModel || OPENAI_MODELS['gpt-4o-mini'].id,
+            messages: [
+              {
+                role: 'system',
+                content: 'You are a helpful writing assistant. Output only the transformed text, no explanations.'
+              },
+              {
+                role: 'user',
+                content: prompt
+              }
+            ],
+            temperature: 0.7,
+            max_tokens: 4000
+          })
+        });
+
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({ error: { message: 'Unknown error' } }));
+          throw new Error(error.error?.message || `OpenAI API error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        return data.choices[0]?.message?.content?.trim() || text;
+      }
+
+      // Claude mode
+      if (provider === AI_PROVIDERS.CLAUDE) {
+        if (!claudeApiKey) throw new Error('Claude API key is required');
+
+        const response = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'x-api-key': claudeApiKey,
+            'anthropic-version': '2023-06-01',
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            model: claudeModel || CLAUDE_MODELS['claude-3-5-haiku'].id,
+            max_tokens: 4000,
+            messages: [
+              {
+                role: 'user',
+                content: `You are a helpful writing assistant. Output only the transformed text, no explanations.\n\n${prompt}`
+              }
+            ]
+          })
+        });
+
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({ error: { message: 'Unknown error' } }));
+          throw new Error(error.error?.message || `Claude API error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        return data.content[0]?.text?.trim() || text;
+      }
+
+      throw new Error('Invalid AI provider');
+    } catch (error) {
+      throw error;
+    }
+  }
+
   // Cleanup (no-op for API-only service)
   async cleanup() {
     return Promise.resolve();
