@@ -39,6 +39,7 @@ import 'prismjs/components/prism-markdown';
 import DiffViewerModal from './components/DiffViewerModal';
 import AISettingsModal from './components/AISettingsModal';
 import OllamaSetupWizard from './components/OllamaSetupWizard';
+import CodeMirrorEditor from './components/CodeMirrorEditor';
 import { AI_PROVIDERS, GROQ_MODELS, OPENAI_MODELS, CLAUDE_MODELS } from './services/AIService';
 import { isDesktop, getAIService } from './utils/platform';
 import { loadSecureSettings, saveSecureSettings } from './utils/secureStorage';
@@ -1047,6 +1048,15 @@ const BetterTextPad = () => {
   const [autoPairingEnabled, setAutoPairingEnabled] = useState(true);
   const [moveMenuFolderId, setMoveMenuFolderId] = useState(null);
 
+  // VIM mode state
+  const [vimEnabled, setVimEnabled] = useState(() => {
+    const saved = localStorage.getItem('vim-mode-enabled');
+    return saved === 'true';
+  });
+  const [vimMode, setVimMode] = useState('normal'); // 'normal', 'insert', 'visual'
+  const [vimRegister, setVimRegister] = useState(''); // For yank/delete operations
+  const [vimVisualStart, setVimVisualStart] = useState(null); // Visual mode start position
+
   // AI Fix state
   const [aiFixState, setAIFixState] = useState({
     isLoading: false,
@@ -1088,6 +1098,7 @@ const BetterTextPad = () => {
   const [dragOverTabId, setDragOverTabId] = useState(null);
   const [tabContextMenu, setTabContextMenu] = useState(null);
   const textareaRef = useRef(null);
+  const codeMirrorRef = useRef(null);
   const autoFormatTimeoutRef = useRef(null);
   const tabsRef = useRef(tabs);
   const activeTabIdRef = useRef(activeTabId);
@@ -1152,6 +1163,11 @@ const BetterTextPad = () => {
       }
     };
   }, []);
+
+  // Persist VIM mode preference
+  useEffect(() => {
+    localStorage.setItem('vim-mode-enabled', vimEnabled);
+  }, [vimEnabled]);
 
   useEffect(() => {
     if (typeof document === 'undefined') return;
@@ -1619,63 +1635,56 @@ const BetterTextPad = () => {
   };
 
   const updateCursorPosition = (textOverride = null) => {
-    if (!textareaRef.current) return;
-    
-    const textarea = textareaRef.current;
-    const text = textOverride ?? textarea.value;
-    const cursorPos = textarea.selectionStart;
-    
-    const { line, column } = getLineColumnFromIndex(text, cursorPos);
-    const latest = { line, column };
-    setCursorPosition(latest);
-    lastCursorRef.current = latest;
-    setBraceMatch(findMatchingBraces(text, cursorPos));
-    if (isCSVTab && csvRowCount > 0 && csvEditorRowRefs.current.size > 0) {
-      let matchedRow = null;
-      for (const [rowIndex, meta] of csvEditorRowRefs.current.entries()) {
-        if (cursorPos >= meta.start && cursorPos <= meta.end) {
-          matchedRow = rowIndex;
-          break;
-        }
-      }
-      if (matchedRow === null && cursorPos > (csvEditorRowRefs.current.get(csvRowCount - 1)?.end ?? 0)) {
-        matchedRow = csvRowCount - 1;
-      }
-      if (activeCsvRowIndex !== matchedRow) {
-        setActiveCsvRowIndex(matchedRow);
-      }
-    } else if (isCSVTab && csvRowCount === 0 && activeCsvRowIndex !== null) {
-      setActiveCsvRowIndex(null);
-    } else if (activeCsvRowIndex !== null && !isCSVTab) {
-      setActiveCsvRowIndex(null);
-    }
+    // CodeMirror compatibility: cursor position is already tracked via onCursorChange
+    // This function is kept for backward compatibility but doesn't do anything now
+    // since cursor tracking happens in the CodeMirror onChange callback
+    return;
   };
 
   const focusEditorRange = (start, end = start) => {
-    if (!textareaRef.current) return;
-    const textarea = textareaRef.current;
-    textarea.focus();
-    textarea.setSelectionRange(start, end);
+    if (!codeMirrorRef.current) return;
 
-    const { line } = getLineColumnFromIndex(textarea.value, start);
-    const lineHeight = 24;
-    const targetScroll = Math.max(0, (line - 1) * lineHeight - textarea.clientHeight / 2 + lineHeight);
-    textarea.scrollTop = targetScroll;
-    syncScrollVisuals();
-    updateCursorPosition(textarea.value);
+    // Use CodeMirror API to focus and set selection
+    codeMirrorRef.current.focus();
+    codeMirrorRef.current.setSelection(start, end);
+
+    // Scroll the selection into view
+    const view = codeMirrorRef.current.getView();
+    if (view) {
+      const line = view.state.doc.lineAt(start);
+      const lineHeight = 24;
+      const viewportHeight = view.dom.clientHeight;
+      const targetTop = (line.number - 1) * lineHeight;
+
+      view.scrollDOM.scrollTo({
+        top: Math.max(0, targetTop - viewportHeight / 2 + lineHeight),
+        behavior: 'smooth'
+      });
+    }
   };
 
   const focusCsvRow = (rowIndex) => {
-    if (!isCSVTab || !textareaRef.current) return;
+    if (!isCSVTab || !codeMirrorRef.current) return;
     const entry = csvEditorRowRefs.current.get(rowIndex);
     if (!entry) return;
-    const textarea = textareaRef.current;
-    const start = entry.start;
-    const end = entry.end;
-    textarea.focus();
-    textarea.setSelectionRange(start, end);
-    updateCursorPosition(textarea.value);
-    syncScrollVisuals();
+
+    // Use CodeMirror API to focus and set selection
+    codeMirrorRef.current.focus();
+    codeMirrorRef.current.setSelection(entry.start, entry.end);
+
+    // Scroll the row into view
+    const view = codeMirrorRef.current.getView();
+    if (view) {
+      const line = view.state.doc.lineAt(entry.start);
+      const lineHeight = 24; // Approximate line height
+      const viewportHeight = view.dom.clientHeight;
+      const targetTop = (line.number - 1) * lineHeight;
+
+      view.scrollDOM.scrollTo({
+        top: Math.max(0, targetTop - viewportHeight / 2 + lineHeight),
+        behavior: 'smooth'
+      });
+    }
   };
 
   const handleCsvPreviewRowClick = (rowIndex) => {
@@ -1684,9 +1693,11 @@ const BetterTextPad = () => {
   };
 
   const goToPosition = (line, column) => {
-    if (!textareaRef.current || !line) return;
-    const textarea = textareaRef.current;
-    const index = getIndexFromLineColumn(textarea.value, line, column || 1);
+    if (!codeMirrorRef.current || !line) return;
+
+    // Get the content from CodeMirror
+    const content = codeMirrorRef.current.getValue();
+    const index = getIndexFromLineColumn(content, line, column || 1);
     focusEditorRange(index, index + 1);
   };
 
@@ -2731,12 +2742,16 @@ const BetterTextPad = () => {
   };
 
   const handleFindNext = () => {
-    if (!textareaRef.current || !findValue) return;
-    const textarea = textareaRef.current;
-    const text = textarea.value;
-    const startPos = textarea.selectionEnd || 0;
+    if (!codeMirrorRef.current || !findValue) return;
+
+    const view = codeMirrorRef.current.getView();
+    if (!view) return;
+
+    const text = view.state.doc.toString();
+    const startPos = view.state.selection.main.head;
     let matchIndex = text.indexOf(findValue, startPos);
 
+    // Wrap around to beginning if not found
     if (matchIndex === -1 && startPos !== 0) {
       matchIndex = text.indexOf(findValue, 0);
     }
@@ -2747,18 +2762,22 @@ const BetterTextPad = () => {
   };
 
   const handleReplace = () => {
-    if (!textareaRef.current || !findValue || !activeTab) return;
-    const textarea = textareaRef.current;
-    const text = textarea.value;
-    const { selectionStart, selectionEnd } = textarea;
+    if (!codeMirrorRef.current || !findValue || !activeTab) return;
+
+    const view = codeMirrorRef.current.getView();
+    if (!view) return;
+
+    const text = view.state.doc.toString();
+    const { from: selectionStart, to: selectionEnd } = view.state.selection.main;
     const selected = text.substring(selectionStart, selectionEnd);
 
     if (selected === findValue) {
       const replaceLength = replaceValue.length;
-      // Use execCommand to preserve undo stack
-      textarea.focus();
-      textarea.setSelectionRange(selectionStart, selectionEnd);
-      document.execCommand('insertText', false, replaceValue);
+
+      // Replace using CodeMirror's transaction API
+      view.dispatch({
+        changes: { from: selectionStart, to: selectionEnd, insert: replaceValue }
+      });
 
       // Update React state to match
       const newContent = text.substring(0, selectionStart) + replaceValue + text.substring(selectionEnd);
@@ -2773,16 +2792,20 @@ const BetterTextPad = () => {
   };
 
   const handleReplaceAll = () => {
-    if (!textareaRef.current || !findValue || !activeTab) return;
-    const textarea = textareaRef.current;
-    const text = textarea.value;
+    if (!codeMirrorRef.current || !findValue || !activeTab) return;
+
+    const view = codeMirrorRef.current.getView();
+    if (!view) return;
+
+    const text = view.state.doc.toString();
     if (!text.includes(findValue)) return;
 
-    // Use execCommand to preserve undo stack - select all and replace
-    textarea.focus();
     const newContent = text.split(findValue).join(replaceValue);
-    textarea.setSelectionRange(0, text.length);
-    document.execCommand('insertText', false, newContent);
+
+    // Replace all using CodeMirror's transaction API
+    view.dispatch({
+      changes: { from: 0, to: text.length, insert: newContent }
+    });
 
     // Update React state to match
     updateTabContent(activeTab.id, newContent);
@@ -2855,6 +2878,248 @@ const BetterTextPad = () => {
     const { selectionStart, selectionEnd, value } = textarea;
     const selectedText = value.substring(selectionStart, selectionEnd);
 
+    // VIM mode handling
+    if (vimEnabled) {
+      // In normal mode, prevent default input
+      if (vimMode === 'normal') {
+        // Allow Escape always
+        if (event.key === 'Escape') {
+          return;
+        }
+
+        event.preventDefault();
+
+        // Navigation keys
+        if (event.key === 'h') { // Move left
+          const newPos = Math.max(0, selectionStart - 1);
+          textarea.setSelectionRange(newPos, newPos);
+          updateCursorPosition(value);
+          return;
+        }
+        if (event.key === 'l') { // Move right
+          const newPos = Math.min(value.length, selectionStart + 1);
+          textarea.setSelectionRange(newPos, newPos);
+          updateCursorPosition(value);
+          return;
+        }
+        if (event.key === 'j') { // Move down
+          const lines = value.split('\n');
+          const beforeCursor = value.substring(0, selectionStart);
+          const currentLineNum = beforeCursor.split('\n').length - 1;
+          if (currentLineNum < lines.length - 1) {
+            const currentLineStart = beforeCursor.lastIndexOf('\n') + 1;
+            const colPos = selectionStart - currentLineStart;
+            const nextLineStart = value.indexOf('\n', selectionStart) + 1;
+            const nextLineEnd = value.indexOf('\n', nextLineStart);
+            const nextLineLength = nextLineEnd === -1 ? value.length - nextLineStart : nextLineEnd - nextLineStart;
+            const newPos = nextLineStart + Math.min(colPos, nextLineLength);
+            textarea.setSelectionRange(newPos, newPos);
+            updateCursorPosition(value);
+          }
+          return;
+        }
+        if (event.key === 'k') { // Move up
+          const beforeCursor = value.substring(0, selectionStart);
+          const currentLineNum = beforeCursor.split('\n').length - 1;
+          if (currentLineNum > 0) {
+            const currentLineStart = beforeCursor.lastIndexOf('\n') + 1;
+            const colPos = selectionStart - currentLineStart;
+            const prevLineEnd = currentLineStart - 1;
+            const prevLineStart = value.lastIndexOf('\n', prevLineEnd - 1) + 1;
+            const prevLineLength = prevLineEnd - prevLineStart;
+            const newPos = prevLineStart + Math.min(colPos, prevLineLength);
+            textarea.setSelectionRange(newPos, newPos);
+            updateCursorPosition(value);
+          }
+          return;
+        }
+
+        // Enter insert mode
+        if (event.key === 'i') {
+          setVimMode('insert');
+          return;
+        }
+        if (event.key === 'a') { // Insert after cursor
+          const newPos = Math.min(value.length, selectionStart + 1);
+          textarea.setSelectionRange(newPos, newPos);
+          setVimMode('insert');
+          return;
+        }
+        if (event.key === 'A') { // Insert at end of line
+          const lineEnd = value.indexOf('\n', selectionStart);
+          const newPos = lineEnd === -1 ? value.length : lineEnd;
+          textarea.setSelectionRange(newPos, newPos);
+          setVimMode('insert');
+          return;
+        }
+        if (event.key === 'I') { // Insert at beginning of line
+          const beforeCursor = value.substring(0, selectionStart);
+          const lineStart = beforeCursor.lastIndexOf('\n') + 1;
+          textarea.setSelectionRange(lineStart, lineStart);
+          setVimMode('insert');
+          return;
+        }
+        if (event.key === 'o') { // Open line below
+          const lineEnd = value.indexOf('\n', selectionStart);
+          const insertPos = lineEnd === -1 ? value.length : lineEnd;
+          const newValue = value.substring(0, insertPos) + '\n' + value.substring(insertPos);
+          textarea.value = newValue;
+          updateTabContent(activeTab.id, newValue);
+          textarea.setSelectionRange(insertPos + 1, insertPos + 1);
+          setVimMode('insert');
+          return;
+        }
+        if (event.key === 'O') { // Open line above
+          const beforeCursor = value.substring(0, selectionStart);
+          const lineStart = beforeCursor.lastIndexOf('\n') + 1;
+          const newValue = value.substring(0, lineStart) + '\n' + value.substring(lineStart);
+          textarea.value = newValue;
+          updateTabContent(activeTab.id, newValue);
+          textarea.setSelectionRange(lineStart, lineStart);
+          setVimMode('insert');
+          return;
+        }
+
+        // Delete operations
+        if (event.key === 'x') { // Delete character under cursor
+          if (selectionStart < value.length) {
+            const newValue = value.substring(0, selectionStart) + value.substring(selectionStart + 1);
+            textarea.value = newValue;
+            updateTabContent(activeTab.id, newValue);
+            setVimRegister(value[selectionStart]);
+          }
+          return;
+        }
+        if (event.key === 'd' && event.shiftKey) { // dd - delete line
+          const beforeCursor = value.substring(0, selectionStart);
+          const lineStart = beforeCursor.lastIndexOf('\n') + 1;
+          const lineEnd = value.indexOf('\n', selectionStart);
+          const deletedLine = lineEnd === -1
+            ? value.substring(lineStart)
+            : value.substring(lineStart, lineEnd + 1);
+          const newValue = lineEnd === -1
+            ? value.substring(0, lineStart === 0 ? 0 : lineStart - 1)
+            : value.substring(0, lineStart) + value.substring(lineEnd + 1);
+          textarea.value = newValue;
+          updateTabContent(activeTab.id, newValue);
+          setVimRegister(deletedLine);
+          textarea.setSelectionRange(lineStart, lineStart);
+          return;
+        }
+
+        // Yank (copy)
+        if (event.key === 'y' && event.shiftKey) { // yy - yank line
+          const beforeCursor = value.substring(0, selectionStart);
+          const lineStart = beforeCursor.lastIndexOf('\n') + 1;
+          const lineEnd = value.indexOf('\n', selectionStart);
+          const yankedLine = lineEnd === -1
+            ? value.substring(lineStart)
+            : value.substring(lineStart, lineEnd + 1);
+          setVimRegister(yankedLine);
+          return;
+        }
+
+        // Paste
+        if (event.key === 'p') { // Paste after cursor
+          if (vimRegister) {
+            const newValue = value.substring(0, selectionStart) + vimRegister + value.substring(selectionStart);
+            textarea.value = newValue;
+            updateTabContent(activeTab.id, newValue);
+            textarea.setSelectionRange(selectionStart + vimRegister.length, selectionStart + vimRegister.length);
+          }
+          return;
+        }
+        if (event.key === 'P') { // Paste before cursor
+          if (vimRegister) {
+            const newValue = value.substring(0, selectionStart) + vimRegister + value.substring(selectionStart);
+            textarea.value = newValue;
+            updateTabContent(activeTab.id, newValue);
+            textarea.setSelectionRange(selectionStart, selectionStart);
+          }
+          return;
+        }
+
+        // Visual mode
+        if (event.key === 'v') {
+          setVimMode('visual');
+          setVimVisualStart(selectionStart);
+          return;
+        }
+
+        // Undo/Redo (let browser handle it)
+        if (event.key === 'u') {
+          document.execCommand('undo');
+          return;
+        }
+        if (event.ctrlKey && event.key === 'r') {
+          document.execCommand('redo');
+          return;
+        }
+
+        return; // Block all other keys in normal mode
+      }
+
+      // In insert mode, allow normal typing but catch Escape to return to normal mode
+      if (vimMode === 'insert') {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          setVimMode('normal');
+          return;
+        }
+        // Allow normal key handling for insert mode
+      }
+
+      // In visual mode
+      if (vimMode === 'visual') {
+        event.preventDefault();
+
+        if (event.key === 'Escape') {
+          setVimMode('normal');
+          setVimVisualStart(null);
+          textarea.setSelectionRange(selectionStart, selectionStart);
+          return;
+        }
+
+        // Navigation in visual mode extends selection
+        if (event.key === 'h') {
+          const newPos = Math.max(0, selectionEnd - 1);
+          textarea.setSelectionRange(vimVisualStart, newPos);
+          updateCursorPosition(value);
+          return;
+        }
+        if (event.key === 'l') {
+          const newPos = Math.min(value.length, selectionEnd + 1);
+          textarea.setSelectionRange(vimVisualStart, newPos);
+          updateCursorPosition(value);
+          return;
+        }
+
+        // Yank selection
+        if (event.key === 'y') {
+          const selected = value.substring(Math.min(vimVisualStart, selectionEnd), Math.max(vimVisualStart, selectionEnd));
+          setVimRegister(selected);
+          setVimMode('normal');
+          setVimVisualStart(null);
+          textarea.setSelectionRange(selectionStart, selectionStart);
+          return;
+        }
+
+        // Delete selection
+        if (event.key === 'd') {
+          const selected = value.substring(Math.min(vimVisualStart, selectionEnd), Math.max(vimVisualStart, selectionEnd));
+          setVimRegister(selected);
+          const newValue = value.substring(0, Math.min(vimVisualStart, selectionEnd)) + value.substring(Math.max(vimVisualStart, selectionEnd));
+          textarea.value = newValue;
+          updateTabContent(activeTab.id, newValue);
+          setVimMode('normal');
+          setVimVisualStart(null);
+          textarea.setSelectionRange(Math.min(vimVisualStart, selectionEnd), Math.min(vimVisualStart, selectionEnd));
+          return;
+        }
+
+        return;
+      }
+    }
 
     // For CSV files, only handle Tab and Enter - let everything else behave normally
     if (isCSVTab && event.key !== 'Tab' && event.key !== 'Enter') {
@@ -2905,7 +3170,8 @@ const BetterTextPad = () => {
       const after = value.substring(selectionEnd);
       const prevLineStart = before.lastIndexOf('\n') + 1;
       const currentLine = before.substring(prevLineStart);
-      const baseIndent = currentLine.match(/^\s*/)?.[0] ?? '';
+      const match = currentLine.match(/^\s*/);
+      const baseIndent = match ? match[0] : '';
       const trimmedLine = currentLine.trimRight();
       const lastChar = trimmedLine.slice(-1);
       const nextChar = after[0];
@@ -3501,21 +3767,25 @@ const BetterTextPad = () => {
   }, [isMarkdownTab, getMarkdownLineCount]);
 
   const markdownSyncEditor = useCallback((targetLine) => {
-    if (!isMarkdownTab || !textareaRef.current) return;
+    if (!isMarkdownTab || !codeMirrorRef.current) return;
     const line = Math.max(1, targetLine || 1);
-    const index = getIndexFromLineColumn(textareaRef.current.value, line, 1);
-    setSelectionRange(index, index);
-    scrollLineIntoView(line);
-  }, [isMarkdownTab, setSelectionRange]);
+    const content = codeMirrorRef.current.getValue();
+    const index = getIndexFromLineColumn(content, line, 1);
+    focusEditorRange(index, index);
+  }, [isMarkdownTab]);
 
   const handleMarkdownEditorClick = useCallback(() => {
-    if (!isMarkdownTab || !textareaRef.current) return;
-    const { line } = getLineColumnFromIndex(textareaRef.current.value, textareaRef.current.selectionStart);
+    if (!isMarkdownTab || !codeMirrorRef.current) return;
+    const view = codeMirrorRef.current.getView();
+    if (!view) return;
+    const pos = view.state.selection.main.head;
+    const content = view.state.doc.toString();
+    const { line } = getLineColumnFromIndex(content, pos);
     markdownSyncScroll(line);
   }, [isMarkdownTab, markdownSyncScroll]);
 
   const handleMarkdownPreviewClick = useCallback((event) => {
-    if (!isMarkdownTab || !markdownPreviewRef.current || !textareaRef.current) return;
+    if (!isMarkdownTab || !markdownPreviewRef.current || !codeMirrorRef.current) return;
     const preview = markdownPreviewRef.current;
     const rect = preview.getBoundingClientRect();
     const offsetY = event.clientY - rect.top + preview.scrollTop;
@@ -3653,14 +3923,15 @@ const BetterTextPad = () => {
     const fileType = getFileType(fileName);
 
     // Only show structure tree for JSON, XML, and YAML files
-    if (fileType.type === 'json' && (trimmed.startsWith('{') || trimmed.startsWith('['))) {
+    // Also detect from content if file type is not explicitly set
+    if ((fileType.type === 'json' || fileType.type === 'text') && (trimmed.startsWith('{') || trimmed.startsWith('['))) {
       // Use looksLikeJSON to validate it's actually parseable JSON
       if (looksLikeJSON(trimmed)) {
         return { type: 'JSON', nodes: buildJSONStructure(activeTab.content) };
       }
     }
 
-    if (fileType.type === 'markup' && trimmed.startsWith('<')) {
+    if ((fileType.type === 'markup' || fileType.type === 'text') && trimmed.startsWith('<')) {
       return { type: 'XML', nodes: buildXMLStructure(activeTab.content) };
     }
 
@@ -4355,204 +4626,63 @@ const BetterTextPad = () => {
     if (isCsvEditorCollapsed) return null;
 
     return (
-              <div className="flex flex-1 overflow-hidden min-w-0 relative" style={{ maxWidth: '100%' }}>
-        {/* Line Numbers with Error Indicators */}
-        <div
-          ref={lineNumberRef}
-          className="editor-line-numbers text-gray-500 text-right font-mono text-sm select-none border-r border-gray-700"
-          style={{ minWidth: '50px', transform: 'translateZ(0)', paddingTop: editorTopPaddingPx, paddingBottom: '16px' }}
-        >
-          {editorLines.map((_, index) => {
-            // For CSV files, skip numbering the first line (header row)
-            const lineNum = isCSVTab ? (index === 0 ? null : index) : (index + 1);
-            const markers = errorsByLine.get(index + 1) || [];
-            const primaryMarker = markers.find(marker => marker.isPrimary);
-            const hasError = markers.length > 0;
-            const accentClass = primaryMarker ? 'text-orange-400' : 'text-red-400';
-            const rowTone = primaryMarker ? 'text-orange-200' : 'text-red-200';
-            const errorBgColor = primaryMarker ? '#7c2d12' : '#7f1d1d';
-            const normalBgColor = theme === 'dark' ? '#1f2937' : '#f3f4f6';
-            const isCsvDataLine = isCSVTab && index > 0;
-            const csvRowIndex = isCsvDataLine ? index - 1 : null;
-            const isActiveCsvLine = isCsvDataLine && csvRowIndex === activeCsvRowIndex;
-            const backgroundColor = hasError ? errorBgColor : (isActiveCsvLine ? csvRowHighlightLineBg : normalBgColor);
-            const activeCsvClass = isActiveCsvLine ? `${csvRowHighlightTextClass} font-semibold` : '';
+      <div className="flex flex-1 overflow-hidden min-w-0 relative" style={{ maxWidth: '100%', height: '100%' }}>
+        <CodeMirrorEditor
+          ref={codeMirrorRef}
+          value={activeTab.content}
+          onChange={(newValue) => {
+            updateTabContent(activeTab.id, newValue);
+          }}
+          language={syntaxLanguage || 'javascript'}
+          theme={theme}
+          vimEnabled={vimEnabled}
+          onVimModeChange={(mode) => {
+            setVimMode(mode);
+          }}
+          onCursorChange={(pos) => {
+            // Update cursor position for display
+            if (activeTab && activeTab.content) {
+              const lines = activeTab.content.substring(0, pos).split('\n');
+              const line = lines.length;
+              const column = lines[lines.length - 1].length + 1;
+              const cursorInfo = { line, column };
+              setCursorPosition(cursorInfo);
+              lastCursorRef.current = cursorInfo;
 
-            return (
-              <div
-                key={index}
-                className={`leading-6 px-3 flex items-start justify-end ${hasError ? `${rowTone} font-bold` : ''} ${activeCsvClass}`}
-                style={{ minHeight: '24px', height: '24px', backgroundColor, marginLeft: '-12px', marginRight: '-12px', paddingLeft: '12px', paddingRight: '12px' }}
-              >
-                {hasError && <span className={`${accentClass} mr-1`}>●</span>}
-                {lineNum}
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Editor with inline error markers */}
-        <div className="flex-1 relative bg-gray-900 overflow-auto font-mono text-sm">
-          {/* Syntax Highlighting Overlay using Prism.js */}
-          {shouldShowSyntaxHighlighting && syntaxLanguage && (
-            <div
-              ref={syntaxOverlayRef}
-              className="absolute top-0 left-0 right-0 z-10 pointer-events-none select-none font-mono text-sm"
-              style={{ lineHeight: '24px', whiteSpace: 'pre-wrap', wordBreak: 'break-word', willChange: 'transform', paddingTop: editorTopPaddingPx, paddingLeft: '16px', paddingRight: '16px', paddingBottom: '16px' }}
-            >
-              {editorLines.map((line, lineIndex) => (
-                <div
-                  key={`syntax-${lineIndex}`}
-                  style={{ minHeight: '24px' }}
-                  dangerouslySetInnerHTML={{
-                    __html: Prism.highlight(
-                      line || ' ',
-                      Prism.languages[syntaxLanguage] || Prism.languages.markup,
-                      syntaxLanguage
-                    )
-                  }}
-                />
-              ))}
-            </div>
-          )}
-
-          {braceMarkersByLine.size > 0 && (
-            <div
-              ref={braceOverlayRef}
-              className="absolute inset-0 z-30 pointer-events-none select-none overflow-hidden"
-              style={{ lineHeight: '24px', whiteSpace: isCSVTab ? 'pre' : 'pre-wrap', wordBreak: isCSVTab ? 'normal' : 'break-all', willChange: 'transform', paddingTop: editorTopPaddingPx, paddingLeft: '16px', paddingRight: '16px', paddingBottom: '16px' }}
-            >
-              {editorLines.map((line, lineIndex) => {
-                const lineNum = lineIndex + 1;
-                const markers = braceMarkersByLine.get(lineNum);
-                if (!markers || markers.length === 0) {
-                  return (
-                    <div key={`brace-${lineIndex}`} style={{ minHeight: '24px' }}>
-                      <span className="opacity-0">{line || ' '}</span>
-                    </div>
-                  );
-                }
-                let lastIndex = 0;
-                return (
-                  <div key={`brace-${lineIndex}`} style={{ minHeight: '24px' }}>
-                    {markers.map((marker, markerIdx) => {
-                      const columnIndex = Math.max(0, (marker.column || 1) - 1);
-                      const beforeText = line.substring(lastIndex, columnIndex);
-                      lastIndex = columnIndex + 1;
-                      const braceColor = marker.role === 'open' ? '#c084fc' : '#60a5fa';
-                      return (
-                        <React.Fragment key={`brace-marker-${lineIndex}-${markerIdx}`}>
-                          <span className="opacity-0">{beforeText}</span>
-                          <span
-                            className="inline-block rounded"
-                            style={{
-                              backgroundColor: braceColor,
-                              opacity: 0.35
-                            }}
-                          >
-                            <span className="opacity-0">{line.charAt(columnIndex) || marker.char || ' '}</span>
-                          </span>
-                        </React.Fragment>
-                      );
-                    })}
-                    <span className="opacity-0">{line.substring(lastIndex)}</span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          <div
-            ref={errorOverlayRef}
-            className="absolute inset-0 z-40 pointer-events-none select-none overflow-hidden"
-            style={{ lineHeight: '24px', whiteSpace: isCSVTab ? 'pre' : 'pre-wrap', wordBreak: isCSVTab ? 'normal' : 'break-all', willChange: 'transform', paddingTop: editorTopPaddingPx, paddingLeft: '16px', paddingRight: '16px', paddingBottom: '16px' }}
-          >
-            {editorLines.map((line, lineIndex) => {
-              const lineNum = lineIndex + 1;
-              const markers = errorsByLine.get(lineNum);
-
-              if (!markers || markers.length === 0) {
-                return (
-                  <div key={`error-${lineIndex}`} style={{ minHeight: '24px' }}>
-                    <span className="opacity-0">{line || ' '}</span>
-                  </div>
-                );
+              // Sync markdown preview if in markdown mode
+              if (isMarkdownTab) {
+                markdownSyncScroll(line);
               }
 
-              let lastIndex = 0;
+              // Update brace matching
+              setBraceMatch(findMatchingBraces(activeTab.content, pos));
 
-              return (
-                <div key={`error-${lineIndex}`} style={{ minHeight: '24px' }}>
-                  {markers.map((marker, markerIdx) => {
-                    const columnIndex = Math.max(0, (marker.column || 1) - 1);
-                    const beforeText = line.substring(lastIndex, columnIndex);
-                    lastIndex = columnIndex + 1;
-                    const arrowColor = marker.isPrimary ? '#fb923c' : '#facc15';
-
-                    return (
-                      <React.Fragment key={`error-marker-${lineIndex}-${markerIdx}`}>
-                        <span className="opacity-0">{beforeText}</span>
-                        <span
-                          className="relative"
-                          style={{
-                            borderBottom: `3px solid ${arrowColor}`,
-                            textShadow: `0 0 4px ${arrowColor}`
-                          }}
-                        >
-                          {line.charAt(columnIndex) || '█'}
-                          <span
-                            className="absolute left-0"
-                            style={{
-                              bottom: '-14px',
-                              fontSize: '12px',
-                              color: arrowColor,
-                              fontWeight: 'bold',
-                              textShadow: `0 0 4px ${arrowColor}`
-                            }}
-                          >
-                            ▲
-                          </span>
-                        </span>
-                      </React.Fragment>
-                    );
-                  })}
-                  <span className="opacity-0">{line.substring(lastIndex)}</span>
-                </div>
-              );
-            })}
-          </div>
-          
-          {/* Actual textarea */}
-          <textarea
-            ref={textareaRef}
-            value={activeTab.content}
-            onChange={(e) => {
-              const newValue = e.target.value;
-              const cursorPos = e.target.selectionStart;
-              const cursorEnd = e.target.selectionEnd;
-
-              // Clear pending cursor restoration to prevent old cursor positions from being restored
-              pendingCursorRef.current = null;
-
-              updateTabContent(activeTab.id, newValue);
-
-              // Preserve cursor position after React re-render
-              requestAnimationFrame(() => {
-                if (textareaRef.current) {
-                  textareaRef.current.setSelectionRange(cursorPos, cursorEnd);
-                  updateCursorPosition(newValue);
+              // Handle CSV row highlighting
+              if (isCSVTab && csvRowCount > 0 && csvEditorRowRefs.current.size > 0) {
+                let matchedRow = null;
+                for (const [rowIndex, meta] of csvEditorRowRefs.current.entries()) {
+                  if (pos >= meta.start && pos <= meta.end) {
+                    matchedRow = rowIndex;
+                    break;
+                  }
                 }
-              });
-            }}
-            onKeyDown={handleEditorKeyDown}
-            onKeyUp={() => updateCursorPosition()}
-            onClick={() => { updateCursorPosition(); handleMarkdownEditorClick(); }}
-            className={`absolute inset-0 z-20 w-full h-full bg-transparent font-mono text-sm resize-none focus:outline-none caret-white ${shouldShowSyntaxHighlighting ? 'text-transparent' : 'text-gray-100'}`}
-            placeholder="Start typing..."
-            spellCheck={false}
-            style={{ lineHeight: '24px', whiteSpace: isCSVTab ? 'pre' : 'pre-wrap', wordBreak: isCSVTab ? 'normal' : (shouldShowSyntaxHighlighting ? 'break-word' : 'break-all'), overflowX: isCSVTab ? 'auto' : 'hidden', paddingTop: editorTopPaddingPx, paddingLeft: '16px', paddingRight: '16px', paddingBottom: '16px' }}
-          />
-        </div>
+                if (matchedRow === null && pos > (csvEditorRowRefs.current.get(csvRowCount - 1)?.end ?? 0)) {
+                  matchedRow = csvRowCount - 1;
+                }
+                if (activeCsvRowIndex !== matchedRow) {
+                  setActiveCsvRowIndex(matchedRow);
+                }
+              } else if (isCSVTab && csvRowCount === 0 && activeCsvRowIndex !== null) {
+                setActiveCsvRowIndex(null);
+              } else if (activeCsvRowIndex !== null && !isCSVTab) {
+                setActiveCsvRowIndex(null);
+              }
+            }
+          }}
+          placeholder="Start typing..."
+          className="w-full h-full"
+          style={{ fontSize: '14px' }}
+        />
       </div>
     );
   };
@@ -4660,7 +4790,35 @@ const BetterTextPad = () => {
         </div>
 
         {/* Right side controls */}
-        <div className="flex gap-1.5 ml-auto">
+        <div className="flex gap-1.5 ml-auto items-center">
+          {/* VIM Mode Toggle */}
+          <button
+            onClick={() => {
+              setVimEnabled(!vimEnabled);
+              if (!vimEnabled) {
+                setVimMode('normal'); // Start in normal mode when enabling VIM
+              }
+            }}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-sm transition-colors ${
+              vimEnabled
+                ? theme === 'dark' ? 'bg-indigo-600 hover:bg-indigo-500 text-white' : 'bg-indigo-500 hover:bg-indigo-600 text-white'
+                : theme === 'dark' ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-gray-200 hover:bg-gray-300 text-gray-800'
+            }`}
+            title={vimEnabled ? "Disable VIM Mode" : "Enable VIM Mode"}
+          >
+            <Code2 className="w-4 h-4" />
+            VIM
+            {vimEnabled && (
+              <span className={`ml-1 px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+                vimMode === 'normal' ? 'bg-green-500 text-white' :
+                vimMode === 'insert' ? 'bg-blue-500 text-white' :
+                'bg-purple-500 text-white'
+              }`}>
+                {vimMode === 'normal' ? 'N' : vimMode === 'insert' ? 'I' : 'V'}
+              </span>
+            )}
+          </button>
+
           <button
             onClick={() => setShowAISettings(true)}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-sm transition-colors ${theme === 'dark' ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-gray-200 hover:bg-gray-300 text-gray-800'}`}
@@ -5006,6 +5164,7 @@ const BetterTextPad = () => {
                                   const lineNumBgColor = theme === 'dark' ? '#1f2937' : '#f3f4f6';
                                   const isActiveRow = csvPreviewHasDataRows && rowIdx === activeCsvRowIndex;
                                   const rowHighlightStyle = isActiveRow ? { backgroundColor: csvRowHighlightBg } : null;
+                                  const editorLineNumber = csvEditorRowRefs.current.get(rowIdx)?.lineNumber || (rowIdx + 2);
                                   return (
                                     <tr
                                       key={`csv-row-${rowIdx}`}
@@ -5025,7 +5184,7 @@ const BetterTextPad = () => {
                                         className={`line-num-cell border-r border-b border-l border-gray-700 px-2 py-1 text-center select-none ${isActiveRow ? `${csvRowHighlightTextClass} font-semibold` : 'text-gray-500'}`}
                                         style={{ width: '60px', minWidth: '60px', backgroundColor: isActiveRow ? csvRowHighlightLineBg : lineNumBgColor, position: 'sticky', left: 0, zIndex: 20 }}
                                       >
-                                        {rowIdx + 1}
+                                        {editorLineNumber}
                                       </td>
                                       {Array.from({ length: csvPreviewStats.columnCount }).map((_, cellIdx) => (
                                         <td
