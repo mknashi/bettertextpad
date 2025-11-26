@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { X, Plus, Minus, Save, Upload, ChevronLeft, ChevronRight, Search, Replace, Code2, StickyNote, CheckSquare, ChevronsLeft, ChevronsRight, GripVertical, Bold, Italic, Underline, Sun, Moon, Settings, ChevronDown, ChevronUp, Info, FileText, Braces, FileCode, Folder, FolderOpen, FolderPlus, Edit2, Trash2, Image as ImageIcon, Sparkles, Loader2, Maximize2, Minimize2, PanelLeftClose, PanelLeft } from 'lucide-react';
+import { X, Plus, Minus, Save, Upload, ChevronLeft, ChevronRight, Search, Replace, Code2, StickyNote, CheckSquare, ChevronsLeft, ChevronsRight, GripVertical, Bold, Italic, Underline, Sun, Moon, Settings, ChevronDown, ChevronUp, Info, FileText, Braces, FileCode, Folder, FolderOpen, FolderPlus, Edit2, Trash2, Image as ImageIcon, Sparkles, Loader2, Maximize2, Minimize2, PanelLeftClose, PanelLeft, Check, XCircle } from 'lucide-react';
 import { marked } from 'marked';
 import Prism from 'prismjs';
 import 'prismjs/themes/prism-tomorrow.css';
@@ -949,6 +949,8 @@ const RichTextEditor = ({ value, onChange, aiService, aiSettings }) => {
   const editorRef = useRef(null);
   const [isAIProcessing, setIsAIProcessing] = useState(false);
   const [showAIMenu, setShowAIMenu] = useState(false);
+  const [aiSuggestion, setAISuggestion] = useState(null);
+  const [originalContent, setOriginalContent] = useState('');
 
   useEffect(() => {
     if (!editorRef.current) return;
@@ -985,6 +987,33 @@ const RichTextEditor = ({ value, onChange, aiService, aiSettings }) => {
     onChange(linkified);
   };
 
+  const formatAIResponse = (text) => {
+    // Check if the text contains markdown formatting
+    const hasMarkdown = /[#*_`\[\]]/g.test(text) || /^[-*+]\s/m.test(text) || /^\d+\.\s/m.test(text);
+
+    if (hasMarkdown) {
+      // Text appears to be markdown, parse it
+      try {
+        const html = marked.parse(text, { breaks: true });
+        return html;
+      } catch (e) {
+        console.error('Error parsing markdown:', e);
+        // Fall through to plain text formatting
+      }
+    }
+
+    // Format as plain text for better readability
+    let formatted = text.replace(/([.!?])\s*/g, '$1 ');
+
+    // Handle line breaks and paragraphs
+    formatted = formatted.split('\n').map(line => line.trim()).filter(line => line).join('\n\n');
+
+    // Remove excessive spacing
+    formatted = formatted.replace(/\s{3,}/g, '  ');
+
+    return formatted;
+  };
+
   const handleAITransform = async (action) => {
     if (!aiService || !editorRef.current) return;
 
@@ -996,20 +1025,56 @@ const RichTextEditor = ({ value, onChange, aiService, aiSettings }) => {
       const textContent = editorRef.current.innerText || editorRef.current.textContent || '';
       if (!textContent.trim()) {
         alert('Please enter some text first');
+        setIsAIProcessing(false);
         return;
       }
 
+      // Store original content
+      setOriginalContent(textContent);
+
       const transformed = await aiService.transformText(textContent, action, aiSettings);
 
-      // Update editor with transformed text (preserve as plain text for simplicity)
-      editorRef.current.innerText = transformed;
-      onChange(transformed);
+      // Format the AI response
+      const formatted = formatAIResponse(transformed);
+
+      // Show suggestion for accept/reject
+      setAISuggestion(formatted);
     } catch (error) {
       console.error('AI transformation error:', error);
       alert(`AI transformation failed: ${error.message}`);
     } finally {
       setIsAIProcessing(false);
     }
+  };
+
+  const handleAcceptSuggestion = () => {
+    if (!editorRef.current || !aiSuggestion) return;
+
+    // Update editor with the AI suggestion
+    // Check if it's HTML (markdown rendered) or plain text
+    if (aiSuggestion.startsWith('<')) {
+      editorRef.current.innerHTML = aiSuggestion;
+      onChange(aiSuggestion);
+    } else {
+      editorRef.current.innerText = aiSuggestion;
+      onChange(aiSuggestion);
+    }
+
+    // Clear suggestion
+    setAISuggestion(null);
+    setOriginalContent('');
+  };
+
+  const handleRejectSuggestion = () => {
+    // Restore original content
+    if (editorRef.current && originalContent) {
+      editorRef.current.innerText = originalContent;
+      onChange(originalContent);
+    }
+
+    // Clear suggestion
+    setAISuggestion(null);
+    setOriginalContent('');
   };
 
   return (
@@ -1025,14 +1090,14 @@ const RichTextEditor = ({ value, onChange, aiService, aiSettings }) => {
             <button
               type="button"
               onClick={() => setShowAIMenu(!showAIMenu)}
-              disabled={isAIProcessing}
-              className={`flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors ${isAIProcessing ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-800 hover:text-white'}`}
+              disabled={isAIProcessing || aiSuggestion}
+              className={`flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors ${(isAIProcessing || aiSuggestion) ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-800 hover:text-white'}`}
               title="AI Tools"
             >
               {isAIProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
               <span>AI</span>
             </button>
-            {showAIMenu && (
+            {showAIMenu && !aiSuggestion && (
               <div className="absolute right-0 top-full mt-1 bg-gray-800 border border-gray-700 rounded shadow-lg z-10 min-w-[160px]">
                 <button
                   type="button"
@@ -1081,10 +1146,47 @@ const RichTextEditor = ({ value, onChange, aiService, aiSettings }) => {
           </div>
         )}
       </div>
+
+      {/* AI Suggestion Preview */}
+      {aiSuggestion && (
+        <div className="border-b border-gray-700 bg-gray-800 p-3">
+          <div className="flex items-start justify-between gap-2 mb-2">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-blue-400" />
+              <span className="text-sm font-medium text-gray-200">AI Suggestion</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleAcceptSuggestion}
+                className="flex items-center gap-1 px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-xs transition-colors"
+                title="Accept Suggestion"
+              >
+                <Check className="w-3 h-3" />
+                Accept
+              </button>
+              <button
+                type="button"
+                onClick={handleRejectSuggestion}
+                className="flex items-center gap-1 px-3 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-xs transition-colors"
+                title="Reject Suggestion"
+              >
+                <XCircle className="w-3 h-3" />
+                Reject
+              </button>
+            </div>
+          </div>
+          <div
+            className="bg-gray-900 rounded p-3 text-gray-200 text-sm max-h-[200px] overflow-y-auto prose prose-invert prose-sm max-w-none"
+            dangerouslySetInnerHTML={{ __html: aiSuggestion.startsWith('<') ? aiSuggestion : `<pre style="white-space: pre-wrap; margin: 0;">${aiSuggestion}</pre>` }}
+          />
+        </div>
+      )}
+
       <div
         ref={editorRef}
         className="min-h-[160px] px-3 py-2 focus:outline-none"
-        contentEditable
+        contentEditable={!aiSuggestion}
         onInput={handleInput}
       />
     </div>
@@ -1119,6 +1221,10 @@ const BetterTextPad = () => {
   const [quickNoteText, setQuickNoteText] = useState('');
   const [quickNoteTitle, setQuickNoteTitle] = useState('');
   const [quickNoteImages, setQuickNoteImages] = useState([]);
+  const [isQuickNoteAIProcessing, setIsQuickNoteAIProcessing] = useState(false);
+  const [showQuickNoteAIMenu, setShowQuickNoteAIMenu] = useState(false);
+  const [quickNoteAISuggestion, setQuickNoteAISuggestion] = useState(null);
+  const [quickNoteOriginalText, setQuickNoteOriginalText] = useState('');
   const [todoTabs, setTodoTabs] = useState(initialTodosStateRef.current.tabs);
   const [activeTodoTabId, setActiveTodoTabId] = useState(initialTodosStateRef.current.activeId);
   const [nextTodoId, setNextTodoId] = useState(initialTodosStateRef.current.nextId);
@@ -3705,6 +3811,93 @@ const BetterTextPad = () => {
     setIsQuickNoteExpanded(false);
   }, [quickNoteTitle, quickNoteText, quickNoteImages, activeFolderId, createNote]);
 
+  const formatQuickNoteAIResponse = (text) => {
+    // Check if the text contains markdown formatting
+    const hasMarkdown = /[#*_`\[\]]/g.test(text) || /^[-*+]\s/m.test(text) || /^\d+\.\s/m.test(text);
+
+    if (hasMarkdown) {
+      // Text appears to be markdown, parse it
+      try {
+        const html = marked.parse(text, { breaks: true });
+        return html;
+      } catch (e) {
+        console.error('Error parsing markdown:', e);
+        // Fall through to plain text formatting
+      }
+    }
+
+    // Format as plain text for better readability
+    let formatted = text.replace(/([.!?])\s*/g, '$1 ');
+
+    // Handle line breaks and paragraphs
+    formatted = formatted.split('\n').map(line => line.trim()).filter(line => line).join('\n\n');
+
+    // Remove excessive spacing
+    formatted = formatted.replace(/\s{3,}/g, '  ');
+
+    return formatted;
+  };
+
+  const handleQuickNoteAITransform = async (action) => {
+    if (!aiService || !quickNoteText.trim()) {
+      if (!quickNoteText.trim()) {
+        alert('Please enter some text first');
+      }
+      return;
+    }
+
+    setIsQuickNoteAIProcessing(true);
+    setShowQuickNoteAIMenu(false);
+
+    try {
+      // Store original content
+      setQuickNoteOriginalText(quickNoteText);
+
+      const transformed = await aiService.transformText(quickNoteText, action, aiSettings);
+
+      // Format the AI response
+      const formatted = formatQuickNoteAIResponse(transformed);
+
+      // Show suggestion for accept/reject
+      setQuickNoteAISuggestion(formatted);
+    } catch (error) {
+      console.error('AI transformation error:', error);
+      alert(`AI transformation failed: ${error.message}`);
+    } finally {
+      setIsQuickNoteAIProcessing(false);
+    }
+  };
+
+  const handleAcceptQuickNoteAISuggestion = () => {
+    if (!quickNoteAISuggestion) return;
+
+    // Update quick note with the AI suggestion
+    // If it's HTML (markdown rendered), convert back to plain text for the textarea
+    let textToSet = quickNoteAISuggestion;
+    if (quickNoteAISuggestion.startsWith('<')) {
+      // Create a temporary div to extract text content from HTML
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = quickNoteAISuggestion;
+      textToSet = tempDiv.textContent || tempDiv.innerText || '';
+    }
+    setQuickNoteText(textToSet);
+
+    // Clear suggestion
+    setQuickNoteAISuggestion(null);
+    setQuickNoteOriginalText('');
+  };
+
+  const handleRejectQuickNoteAISuggestion = () => {
+    // Restore original content
+    if (quickNoteOriginalText) {
+      setQuickNoteText(quickNoteOriginalText);
+    }
+
+    // Clear suggestion
+    setQuickNoteAISuggestion(null);
+    setQuickNoteOriginalText('');
+  };
+
   const handleQuickNotePaste = (event) => {
     const items = event.clipboardData?.items;
     if (!items) return;
@@ -4375,17 +4568,117 @@ const BetterTextPad = () => {
             >
               {isQuickNoteExpanded ? (
                 <form className="space-y-2" onSubmit={finishQuickNote}>
-                  <input
-                    ref={quickNoteInputRef}
-                    value={quickNoteTitle}
-                    onChange={(e) => setQuickNoteTitle(e.target.value)}
-                    className="w-full bg-transparent text-sm text-gray-200 focus:outline-none border-b border-gray-700 pb-1"
-                    placeholder="Title"
-                  />
+                  <div className="flex items-center justify-between gap-2">
+                    <input
+                      ref={quickNoteInputRef}
+                      value={quickNoteTitle}
+                      onChange={(e) => setQuickNoteTitle(e.target.value)}
+                      className="flex-1 bg-transparent text-sm text-gray-200 focus:outline-none border-b border-gray-700 pb-1"
+                      placeholder="Title"
+                    />
+                    {aiService && (
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => setShowQuickNoteAIMenu(!showQuickNoteAIMenu)}
+                          disabled={isQuickNoteAIProcessing || quickNoteAISuggestion}
+                          className={`flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors ${(isQuickNoteAIProcessing || quickNoteAISuggestion) ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-800 text-gray-400 hover:text-white'}`}
+                          title="AI Tools"
+                        >
+                          {isQuickNoteAIProcessing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                          <span>AI</span>
+                        </button>
+                        {showQuickNoteAIMenu && !quickNoteAISuggestion && (
+                          <div className="absolute right-0 top-full mt-1 bg-gray-800 border border-gray-700 rounded shadow-lg z-10 min-w-[160px]">
+                            <button
+                              type="button"
+                              onClick={() => handleQuickNoteAITransform('improve')}
+                              className="w-full text-left px-3 py-2 text-sm hover:bg-gray-700 text-gray-200"
+                            >
+                              Improve Writing
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleQuickNoteAITransform('rewrite')}
+                              className="w-full text-left px-3 py-2 text-sm hover:bg-gray-700 text-gray-200"
+                            >
+                              Rewrite
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleQuickNoteAITransform('rephrase')}
+                              className="w-full text-left px-3 py-2 text-sm hover:bg-gray-700 text-gray-200"
+                            >
+                              Rephrase
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleQuickNoteAITransform('fix-grammar')}
+                              className="w-full text-left px-3 py-2 text-sm hover:bg-gray-700 text-gray-200"
+                            >
+                              Fix Grammar
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleQuickNoteAITransform('summarize')}
+                              className="w-full text-left px-3 py-2 text-sm hover:bg-gray-700 text-gray-200"
+                            >
+                              Summarize
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleQuickNoteAITransform('expand')}
+                              className="w-full text-left px-3 py-2 text-sm hover:bg-gray-700 text-gray-200"
+                            >
+                              Expand
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* AI Suggestion Preview */}
+                  {quickNoteAISuggestion && (
+                    <div className="border border-blue-500 bg-gray-800 rounded p-2">
+                      <div className="flex items-start justify-between gap-2 mb-2">
+                        <div className="flex items-center gap-2">
+                          <Sparkles className="w-3 h-3 text-blue-400" />
+                          <span className="text-xs font-medium text-gray-200">AI Suggestion</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={handleAcceptQuickNoteAISuggestion}
+                            className="flex items-center gap-1 px-2 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-xs transition-colors"
+                            title="Accept Suggestion"
+                          >
+                            <Check className="w-3 h-3" />
+                            Accept
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleRejectQuickNoteAISuggestion}
+                            className="flex items-center gap-1 px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-xs transition-colors"
+                            title="Reject Suggestion"
+                          >
+                            <XCircle className="w-3 h-3" />
+                            Reject
+                          </button>
+                        </div>
+                      </div>
+                      <div
+                        className="bg-gray-900 rounded p-2 text-gray-200 text-xs max-h-[150px] overflow-y-auto prose prose-invert prose-xs max-w-none"
+                        dangerouslySetInnerHTML={{ __html: quickNoteAISuggestion.startsWith('<') ? quickNoteAISuggestion : `<pre style="white-space: pre-wrap; margin: 0; font-size: 0.75rem;">${quickNoteAISuggestion}</pre>` }}
+                      />
+                    </div>
+                  )}
+
                   <textarea
                     value={quickNoteText}
                     onChange={(e) => setQuickNoteText(e.target.value)}
-                    className="w-full bg-transparent text-sm text-gray-200 focus:outline-none resize-none min-h-[100px]"
+                    disabled={quickNoteAISuggestion}
+                    className="w-full bg-transparent text-sm text-gray-200 focus:outline-none resize-none min-h-[100px] disabled:opacity-50"
                     placeholder="Take a note..."
                   />
                   {quickNoteImages.length > 0 && (
