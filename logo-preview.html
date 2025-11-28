@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BetterTextPad Logo Preview</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 900px;
+            width: 100%;
+        }
+
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 40px;
+            font-size: 2.5em;
+        }
+
+        .logo-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 30px;
+            margin-bottom: 40px;
+        }
+
+        .logo-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 12px;
+            transition: transform 0.2s;
+        }
+
+        .logo-item:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .logo-item img {
+            margin-bottom: 15px;
+        }
+
+        .logo-label {
+            font-size: 14px;
+            color: #666;
+            font-weight: 500;
+        }
+
+        .background-demo {
+            margin-top: 40px;
+        }
+
+        .demo-row {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .demo-box {
+            flex: 1;
+            padding: 30px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .dark-bg {
+            background: #1f2937;
+        }
+
+        .light-bg {
+            background: #ffffff;
+            border: 2px solid #e5e7eb;
+        }
+
+        .colored-bg {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+
+        h2 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 1.5em;
+        }
+
+        .specs {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 12px;
+            margin-top: 30px;
+        }
+
+        .specs h3 {
+            color: #6366f1;
+            margin-bottom: 15px;
+        }
+
+        .specs ul {
+            list-style: none;
+        }
+
+        .specs li {
+            padding: 8px 0;
+            color: #555;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .specs li:last-child {
+            border-bottom: none;
+        }
+
+        .color-palette {
+            display: flex;
+            gap: 15px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+        }
+
+        .color-swatch {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .swatch {
+            width: 60px;
+            height: 60px;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            border: 2px solid #e5e7eb;
+        }
+
+        .color-label {
+            font-size: 11px;
+            color: #666;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>BetterTextPad Logo Preview</h1>
+
+        <h2>Option 1: Tech/Code Theme</h2>
+        <div class="logo-grid">
+            <div class="logo-item">
+                <img src="src/assets/logo.svg" alt="Logo 200px" width="200" height="200">
+                <span class="logo-label">200×200px (Original)</span>
+            </div>
+
+            <div class="logo-item">
+                <img src="src/assets/logo.svg" alt="Logo 128px" width="128" height="128">
+                <span class="logo-label">128×128px</span>
+            </div>
+
+            <div class="logo-item">
+                <img src="src/assets/logo.svg" alt="Logo 64px" width="64" height="64">
+                <span class="logo-label">64×64px</span>
+            </div>
+
+            <div class="logo-item">
+                <img src="src/assets/logo.svg" alt="Logo 32px" width="32" height="32">
+                <span class="logo-label">32×32px (Icon size)</span>
+            </div>
+        </div>
+
+        <h2 style="margin-top: 40px;">Option 2: Document/Editor Theme</h2>
+        <div class="logo-grid">
+            <div class="logo-item">
+                <img src="src/assets/logo-document.svg" alt="Document Logo 200px" width="200" height="200">
+                <span class="logo-label">200×200px (Original)</span>
+            </div>
+
+            <div class="logo-item">
+                <img src="src/assets/logo-document.svg" alt="Document Logo 128px" width="128" height="128">
+                <span class="logo-label">128×128px</span>
+            </div>
+
+            <div class="logo-item">
+                <img src="src/assets/logo-document.svg" alt="Document Logo 64px" width="64" height="64">
+                <span class="logo-label">64×64px</span>
+            </div>
+
+            <div class="logo-item">
+                <img src="src/assets/logo-document.svg" alt="Document Logo 32px" width="32" height="32">
+                <span class="logo-label">32×32px (Icon size)</span>
+            </div>
+        </div>
+
+        <h2 style="margin-top: 40px;">Option 3: Abstract/Iconic Theme</h2>
+        <div class="logo-grid">
+            <div class="logo-item">
+                <img src="src/assets/logo-abstract.svg" alt="Abstract Logo 200px" width="200" height="200">
+                <span class="logo-label">200×200px (Original)</span>
+            </div>
+
+            <div class="logo-item">
+                <img src="src/assets/logo-abstract.svg" alt="Abstract Logo 128px" width="128" height="128">
+                <span class="logo-label">128×128px</span>
+            </div>
+
+            <div class="logo-item">
+                <img src="src/assets/logo-abstract.svg" alt="Abstract Logo 64px" width="64" height="64">
+                <span class="logo-label">64×64px</span>
+            </div>
+
+            <div class="logo-item">
+                <img src="src/assets/logo-abstract.svg" alt="Abstract Logo 32px" width="32" height="32">
+                <span class="logo-label">32×32px (Icon size)</span>
+            </div>
+        </div>
+
+        <h2>Background Compatibility - Tech/Code Theme</h2>
+        <div class="demo-row">
+            <div class="demo-box dark-bg">
+                <img src="src/assets/logo.svg" alt="Logo on dark" width="100" height="100">
+            </div>
+            <div class="demo-box light-bg">
+                <img src="src/assets/logo.svg" alt="Logo on light" width="100" height="100">
+            </div>
+            <div class="demo-box colored-bg">
+                <img src="src/assets/logo.svg" alt="Logo on colored" width="100" height="100">
+            </div>
+        </div>
+
+        <h2 style="margin-top: 20px;">Background Compatibility - Document Theme</h2>
+        <div class="demo-row">
+            <div class="demo-box dark-bg">
+                <img src="src/assets/logo-document.svg" alt="Document logo on dark" width="100" height="100">
+            </div>
+            <div class="demo-box light-bg">
+                <img src="src/assets/logo-document.svg" alt="Document logo on light" width="100" height="100">
+            </div>
+            <div class="demo-box colored-bg">
+                <img src="src/assets/logo-document.svg" alt="Document logo on colored" width="100" height="100">
+            </div>
+        </div>
+
+        <h2 style="margin-top: 20px;">Background Compatibility - Abstract Theme</h2>
+        <div class="demo-row">
+            <div class="demo-box dark-bg">
+                <img src="src/assets/logo-abstract.svg" alt="Abstract logo on dark" width="100" height="100">
+            </div>
+            <div class="demo-box light-bg">
+                <img src="src/assets/logo-abstract.svg" alt="Abstract logo on light" width="100" height="100">
+            </div>
+            <div class="demo-box colored-bg">
+                <img src="src/assets/logo-abstract.svg" alt="Abstract logo on colored" width="100" height="100">
+            </div>
+        </div>
+
+        <div class="specs">
+            <h3>Design Specifications - Option 1 (Tech/Code)</h3>
+            <ul>
+                <li><strong>Format:</strong> SVG (Scalable Vector Graphics)</li>
+                <li><strong>Dimensions:</strong> 200×200px (scales to any size)</li>
+                <li><strong>Theme:</strong> Tech/Code inspired</li>
+                <li><strong>Elements:</strong> Code brackets { }, text lines, animated cursor, BTP monogram</li>
+                <li><strong>Animation:</strong> Blinking cursor effect</li>
+            </ul>
+
+            <h3 style="margin-top: 20px;">Color Palette - Tech/Code</h3>
+            <div class="color-palette">
+                <div class="color-swatch">
+                    <div class="swatch" style="background: #f59e0b;"></div>
+                    <div class="color-label">Orange<br>#f59e0b</div>
+                </div>
+                <div class="color-swatch">
+                    <div class="swatch" style="background: #d97706;"></div>
+                    <div class="color-label">Dark Orange<br>#d97706</div>
+                </div>
+                <div class="color-swatch">
+                    <div class="swatch" style="background: #fbbf24;"></div>
+                    <div class="color-label">Amber<br>#fbbf24</div>
+                </div>
+                <div class="color-swatch">
+                    <div class="swatch" style="background: white; border: 2px solid #333;"></div>
+                    <div class="color-label">White<br>#ffffff</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="specs" style="margin-top: 30px;">
+            <h3>Design Specifications - Option 2 (Document/Editor)</h3>
+            <ul>
+                <li><strong>Format:</strong> SVG (Scalable Vector Graphics)</li>
+                <li><strong>Dimensions:</strong> 200×200px (scales to any size)</li>
+                <li><strong>Theme:</strong> Document/Editor inspired</li>
+                <li><strong>Elements:</strong> Paper document, folded corner, text lines, pen/cursor, app name</li>
+                <li><strong>Animation:</strong> Pulsing writing dot</li>
+            </ul>
+
+            <h3 style="margin-top: 20px;">Color Palette - Document</h3>
+            <div class="color-palette">
+                <div class="color-swatch">
+                    <div class="swatch" style="background: #3b82f6;"></div>
+                    <div class="color-label">Blue<br>#3b82f6</div>
+                </div>
+                <div class="color-swatch">
+                    <div class="swatch" style="background: #2563eb;"></div>
+                    <div class="color-label">Dark Blue<br>#2563eb</div>
+                </div>
+                <div class="color-swatch">
+                    <div class="swatch" style="background: #fbbf24;"></div>
+                    <div class="color-label">Amber<br>#fbbf24</div>
+                </div>
+                <div class="color-swatch">
+                    <div class="swatch" style="background: #f59e0b;"></div>
+                    <div class="color-label">Orange<br>#f59e0b</div>
+                </div>
+                <div class="color-swatch">
+                    <div class="swatch" style="background: white; border: 2px solid #333;"></div>
+                    <div class="color-label">White<br>#ffffff</div>
+                </div>
+                <div class="color-swatch">
+                    <div class="swatch" style="background: #64748b;"></div>
+                    <div class="color-label">Slate<br>#64748b</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="specs" style="margin-top: 30px;">
+            <h3>Design Specifications - Option 3 (Abstract/Iconic)</h3>
+            <ul>
+                <li><strong>Format:</strong> SVG (Scalable Vector Graphics)</li>
+                <li><strong>Dimensions:</strong> 200×200px (scales to any size)</li>
+                <li><strong>Theme:</strong> Abstract/Iconic - unique geometric symbol</li>
+                <li><strong>Elements:</strong> Stylized T+P fusion, geometric shapes, pulsing accent dots, glow effects</li>
+                <li><strong>Animation:</strong> Pulsing dots representing active text editing</li>
+                <li><strong>Concept:</strong> Merges letters T and P into a memorable icon with hints of text/editing through geometric abstraction</li>
+            </ul>
+
+            <h3 style="margin-top: 20px;">Color Palette - Abstract</h3>
+            <div class="color-palette">
+                <div class="color-swatch">
+                    <div class="swatch" style="background: #0ea5e9;"></div>
+                    <div class="color-label">Cyan<br>#0ea5e9</div>
+                </div>
+                <div class="color-swatch">
+                    <div class="swatch" style="background: #6366f1;"></div>
+                    <div class="color-label">Indigo<br>#6366f1</div>
+                </div>
+                <div class="color-swatch">
+                    <div class="swatch" style="background: #8b5cf6;"></div>
+                    <div class="color-label">Purple<br>#8b5cf6</div>
+                </div>
+                <div class="color-swatch">
+                    <div class="swatch" style="background: #fbbf24;"></div>
+                    <div class="color-label">Amber<br>#fbbf24</div>
+                </div>
+                <div class="color-swatch">
+                    <div class="swatch" style="background: white; border: 2px solid #333;"></div>
+                    <div class="color-label">White<br>#ffffff</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

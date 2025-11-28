@@ -192,12 +192,15 @@ const AISettingsModal = ({ settings, onSave, onClose, theme, isDesktop, desktopA
     anchor.click();
     document.body.removeChild(anchor);
 
-    // If still blocked, ask user before replacing the app view
-    const confirmed = window.confirm('Unable to open your browser automatically. Open the API key page in this window instead?');
-    if (confirmed) {
-      window.location.href = url;
-    } else {
-      console.warn('[AISettingsModal] window.open and anchor click were blocked; please copy this link:', url);
+    // If still blocked, copy to clipboard and show alert
+    // NEVER use window.location.href as it replaces the entire app!
+    try {
+      navigator.clipboard.writeText(url);
+      alert(`Unable to open browser automatically.\n\nThe API key URL has been copied to your clipboard:\n\n${url}\n\nPlease paste it in your browser.`);
+    } catch (err) {
+      // If clipboard fails, just show the URL
+      alert(`Unable to open browser automatically.\n\nPlease manually open this URL in your browser:\n\n${url}`);
+      console.warn('[AISettingsModal] Failed to copy to clipboard; URL:', url);
     }
   };
 
@@ -324,8 +327,8 @@ const AISettingsModal = ({ settings, onSave, onClose, theme, isDesktop, desktopA
                 </div>
               </label>
 
-              {/* Claude Mode */}
-              <label className={`flex items-start gap-3 p-4 rounded-lg border-2 cursor-pointer transition-all ${
+              {/* Claude Mode - Temporarily disabled */}
+              {/* <label className={`flex items-start gap-3 p-4 rounded-lg border-2 cursor-pointer transition-all ${
                 localSettings.provider === AI_PROVIDERS.CLAUDE
                   ? theme === 'dark'
                     ? 'border-purple-500 bg-purple-900/20'
@@ -357,7 +360,7 @@ const AISettingsModal = ({ settings, onSave, onClose, theme, isDesktop, desktopA
                     Advanced reasoning • Requires API key • Pay per use
                   </p>
                 </div>
-              </label>
+              </label> */}
             </div>
           </div>
 
@@ -573,8 +576,8 @@ const AISettingsModal = ({ settings, onSave, onClose, theme, isDesktop, desktopA
             </div>
           )}
 
-          {/* Claude Settings */}
-          {localSettings.provider === AI_PROVIDERS.CLAUDE && (
+          {/* Claude Settings - Temporarily disabled */}
+          {/* {localSettings.provider === AI_PROVIDERS.CLAUDE && (
             <div className="space-y-4">
               <div>
                 <label className={`block text-sm font-semibold mb-3 ${
@@ -583,7 +586,6 @@ const AISettingsModal = ({ settings, onSave, onClose, theme, isDesktop, desktopA
                   Claude API Key
                 </label>
 
-                {/* Get API Key Button */}
                 <button
                   type="button"
                   onClick={() => openApiKeyPage('claude')}
@@ -618,7 +620,6 @@ const AISettingsModal = ({ settings, onSave, onClose, theme, isDesktop, desktopA
                     }`}
                   />
 
-                  {/* Validation Icon */}
                   {claudeApiKeyStatus && (
                     <div className="absolute right-16 top-1/2 -translate-y-1/2">
                       {claudeApiKeyStatus === 'valid' ? (
@@ -677,7 +678,7 @@ const AISettingsModal = ({ settings, onSave, onClose, theme, isDesktop, desktopA
                 </select>
               </div>
             </div>
-          )}
+          )} */}
 
           {/* Privacy Notice */}
           <div className={`p-4 rounded-lg ${

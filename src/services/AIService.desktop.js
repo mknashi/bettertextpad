@@ -254,64 +254,17 @@ Fixed ${errorDetails.type}:`;
       throw new Error('Groq API key is required');
     }
 
-    const prompt = this.buildFixPrompt(content, errorDetails);
-
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          {
-            role: 'system',
-            content: `You are a ${errorDetails.type} syntax error fixing assistant. Only output valid ${errorDetails.type}, nothing else.`
-          },
-          {
-            role: 'user',
-            content: prompt
-          }
-        ],
-        temperature: 0.1,
-        max_tokens: 16000
-      })
-    });
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: { message: 'Unknown error' } }));
-      throw new Error(error.error?.message || `Groq API error: ${response.status}`);
+    try {
+      const fixed = await invoke('fix_with_groq', {
+        content,
+        errorDetails: JSON.stringify(errorDetails),
+        apiKey,
+        model
+      });
+      return fixed.trim();
+    } catch (error) {
+      throw new Error(`Groq API error: ${error}`);
     }
-
-    const data = await response.json();
-    let fixed = data.choices[0]?.message?.content || '';
-
-    // Remove markdown code block markers but preserve content
-    if (fixed.includes('```')) {
-      const lines = fixed.split('\n');
-      const codeLines = [];
-      let inCodeBlock = false;
-
-      for (const line of lines) {
-        if (line.trim().startsWith('```')) {
-          inCodeBlock = !inCodeBlock;
-        } else if (inCodeBlock) {
-          codeLines.push(line);
-        }
-      }
-
-      if (codeLines.length > 0) {
-        fixed = codeLines.join('\n');
-      } else {
-        fixed = lines.filter(line => !line.trim().startsWith('```')).join('\n');
-      }
-    }
-
-    // Extract complete JSON/XML content
-    fixed = this.extractContent(fixed, errorDetails.type);
-
-    return fixed.trim();
   }
 
   /**
@@ -322,64 +275,17 @@ Fixed ${errorDetails.type}:`;
       throw new Error('OpenAI API key is required');
     }
 
-    const prompt = this.buildFixPrompt(content, errorDetails);
-
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          {
-            role: 'system',
-            content: `You are a ${errorDetails.type} syntax error fixing assistant. Only output valid ${errorDetails.type}, nothing else.`
-          },
-          {
-            role: 'user',
-            content: prompt
-          }
-        ],
-        temperature: 0.1,
-        max_tokens: 16000
-      })
-    });
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: { message: 'Unknown error' } }));
-      throw new Error(error.error?.message || `OpenAI API error: ${response.status}`);
+    try {
+      const fixed = await invoke('fix_with_openai', {
+        content,
+        errorDetails: JSON.stringify(errorDetails),
+        apiKey,
+        model
+      });
+      return fixed.trim();
+    } catch (error) {
+      throw new Error(`OpenAI API error: ${error}`);
     }
-
-    const data = await response.json();
-    let fixed = data.choices[0]?.message?.content || '';
-
-    // Remove markdown code block markers but preserve content
-    if (fixed.includes('```')) {
-      const lines = fixed.split('\n');
-      const codeLines = [];
-      let inCodeBlock = false;
-
-      for (const line of lines) {
-        if (line.trim().startsWith('```')) {
-          inCodeBlock = !inCodeBlock;
-        } else if (inCodeBlock) {
-          codeLines.push(line);
-        }
-      }
-
-      if (codeLines.length > 0) {
-        fixed = codeLines.join('\n');
-      } else {
-        fixed = lines.filter(line => !line.trim().startsWith('```')).join('\n');
-      }
-    }
-
-    // Extract complete JSON/XML content
-    fixed = this.extractContent(fixed, errorDetails.type);
-
-    return fixed.trim();
   }
 
   /**
@@ -390,62 +296,17 @@ Fixed ${errorDetails.type}:`;
       throw new Error('Claude API key is required');
     }
 
-    const prompt = this.buildFixPrompt(content, errorDetails);
-
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model,
-        max_tokens: 16000,
-        system: `You are a ${errorDetails.type} syntax error fixing assistant. Only output valid ${errorDetails.type}, nothing else.`,
-        messages: [
-          {
-            role: 'user',
-            content: prompt
-          }
-        ],
-        temperature: 0.1
-      })
-    });
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: { message: 'Unknown error' } }));
-      throw new Error(error.error?.message || `Claude API error: ${response.status}`);
+    try {
+      const fixed = await invoke('fix_with_claude', {
+        content,
+        errorDetails: JSON.stringify(errorDetails),
+        apiKey,
+        model
+      });
+      return fixed.trim();
+    } catch (error) {
+      throw new Error(`Claude API error: ${error}`);
     }
-
-    const data = await response.json();
-    let fixed = data.content[0]?.text || '';
-
-    // Remove markdown code block markers but preserve content
-    if (fixed.includes('```')) {
-      const lines = fixed.split('\n');
-      const codeLines = [];
-      let inCodeBlock = false;
-
-      for (const line of lines) {
-        if (line.trim().startsWith('```')) {
-          inCodeBlock = !inCodeBlock;
-        } else if (inCodeBlock) {
-          codeLines.push(line);
-        }
-      }
-
-      if (codeLines.length > 0) {
-        fixed = codeLines.join('\n');
-      } else {
-        fixed = lines.filter(line => !line.trim().startsWith('```')).join('\n');
-      }
-    }
-
-    // Extract complete JSON/XML content
-    fixed = this.extractContent(fixed, errorDetails.type);
-
-    return fixed.trim();
   }
 
   /**

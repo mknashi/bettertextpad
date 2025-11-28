@@ -292,10 +292,455 @@ async fn get_cli_args() -> Result<Vec<String>, String> {
     Ok(args.into_iter().skip(1).collect())
 }
 
+// Fix with Claude API
+#[tauri::command]
+async fn fix_with_claude(
+    content: String,
+    error_details: String,
+    api_key: String,
+    model: String,
+) -> Result<String, String> {
+    let details: ErrorDetails = serde_json::from_str(&error_details)
+        .map_err(|e| format!("Failed to parse error details: {}", e))?;
+
+    let error_list = if let Some(ref errors) = details.all_errors {
+        errors
+            .iter()
+            .map(|e| {
+                if let Some(line) = e.line {
+                    format!("Line {}: {}", line, e.message)
+                } else {
+                    e.message.clone()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    } else {
+        details.message.clone()
+    };
+
+    let prompt = format!(
+        r#"You are a {} syntax error fixer. Your task is to fix ONLY the syntax errors in the provided content.
+
+Errors found:
+{}
+
+Content to fix:
+{}
+
+Instructions:
+1. Fix ONLY the syntax errors listed above
+2. Preserve all data and structure
+3. Do not add explanations or comments
+4. Return ONLY the complete corrected {}
+5. Ensure the output is valid {}
+
+Fixed {}:"#,
+        details.error_type,
+        error_list,
+        content,
+        details.error_type,
+        details.error_type,
+        details.error_type
+    );
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(60))
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+
+    let request_body = serde_json::json!({
+        "model": model,
+        "max_tokens": 16000,
+        "system": format!("You are a {} syntax error fixing assistant. Only output valid {}, nothing else.", details.error_type, details.error_type),
+        "messages": [
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ],
+        "temperature": 0.1
+    });
+
+    let response = client
+        .post("https://api.anthropic.com/v1/messages")
+        .header("x-api-key", api_key)
+        .header("anthropic-version", "2023-06-01")
+        .header("Content-Type", "application/json")
+        .json(&request_body)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to call Claude API: {}", e))?;
+
+    if !response.status().is_success() {
+        let error_text = response.text().await.unwrap_or_default();
+        let error_message = if let Ok(error_data) = serde_json::from_str::<serde_json::Value>(&error_text) {
+            error_data["error"]["message"].as_str()
+                .or(error_data["message"].as_str())
+                .unwrap_or(&error_text)
+                .to_string()
+        } else {
+            format!("Claude API error: {}", error_text)
+        };
+        return Err(error_message);
+    }
+
+    let data: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse Claude response: {}", e))?;
+
+    let mut fixed = data["content"][0]["text"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
+
+    // Remove markdown code block markers
+    if fixed.contains("```") {
+        let mut in_code_block = false;
+        let mut code_lines = Vec::new();
+
+        for line in fixed.lines() {
+            if line.trim().starts_with("```") {
+                in_code_block = !in_code_block;
+            } else if in_code_block {
+                code_lines.push(line);
+            }
+        }
+
+        if !code_lines.is_empty() {
+            fixed = code_lines.join("\n");
+        } else {
+            fixed = fixed
+                .lines()
+                .filter(|line| !line.trim().starts_with("```"))
+                .collect::<Vec<_>>()
+                .join("\n");
+        }
+    }
+
+    // Extract content based on type
+    fixed = extract_content(fixed.trim(), &details.error_type);
+
+    Ok(fixed.trim().to_string())
+}
+
+// Fix with Groq API
+#[tauri::command]
+async fn fix_with_groq(
+    content: String,
+    error_details: String,
+    api_key: String,
+    model: String,
+) -> Result<String, String> {
+    let details: ErrorDetails = serde_json::from_str(&error_details)
+        .map_err(|e| format!("Failed to parse error details: {}", e))?;
+
+    let error_list = if let Some(ref errors) = details.all_errors {
+        errors
+            .iter()
+            .map(|e| {
+                if let Some(line) = e.line {
+                    format!("Line {}: {}", line, e.message)
+                } else {
+                    e.message.clone()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    } else {
+        details.message.clone()
+    };
+
+    let prompt = format!(
+        r#"You are a {} syntax error fixer. Your task is to fix ONLY the syntax errors in the provided content.
+
+Errors found:
+{}
+
+Content to fix:
+{}
+
+Instructions:
+1. Fix ONLY the syntax errors listed above
+2. Preserve all data and structure
+3. Do not add explanations or comments
+4. Return ONLY the complete corrected {}
+5. Ensure the output is valid {}
+
+Fixed {}:"#,
+        details.error_type,
+        error_list,
+        content,
+        details.error_type,
+        details.error_type,
+        details.error_type
+    );
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(60))
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+
+    let request_body = serde_json::json!({
+        "model": model,
+        "messages": [
+            {
+                "role": "system",
+                "content": format!("You are a {} syntax error fixing assistant. Only output valid {}, nothing else.", details.error_type, details.error_type)
+            },
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ],
+        "temperature": 0.1,
+        "max_tokens": 16000
+    });
+
+    let response = client
+        .post("https://api.groq.com/openai/v1/chat/completions")
+        .header("Authorization", format!("Bearer {}", api_key))
+        .header("Content-Type", "application/json")
+        .json(&request_body)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to call Groq API: {}", e))?;
+
+    if !response.status().is_success() {
+        let error_text = response.text().await.unwrap_or_default();
+        let error_message = if let Ok(error_data) = serde_json::from_str::<serde_json::Value>(&error_text) {
+            error_data["error"]["message"].as_str()
+                .unwrap_or(&error_text)
+                .to_string()
+        } else {
+            format!("Groq API error: {}", error_text)
+        };
+        return Err(error_message);
+    }
+
+    let data: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse Groq response: {}", e))?;
+
+    let mut fixed = data["choices"][0]["message"]["content"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
+
+    // Remove markdown code block markers
+    if fixed.contains("```") {
+        let mut in_code_block = false;
+        let mut code_lines = Vec::new();
+
+        for line in fixed.lines() {
+            if line.trim().starts_with("```") {
+                in_code_block = !in_code_block;
+            } else if in_code_block {
+                code_lines.push(line);
+            }
+        }
+
+        if !code_lines.is_empty() {
+            fixed = code_lines.join("\n");
+        } else {
+            fixed = fixed
+                .lines()
+                .filter(|line| !line.trim().starts_with("```"))
+                .collect::<Vec<_>>()
+                .join("\n");
+        }
+    }
+
+    // Extract content based on type
+    fixed = extract_content(fixed.trim(), &details.error_type);
+
+    Ok(fixed.trim().to_string())
+}
+
+// Fix with OpenAI API
+#[tauri::command]
+async fn fix_with_openai(
+    content: String,
+    error_details: String,
+    api_key: String,
+    model: String,
+) -> Result<String, String> {
+    let details: ErrorDetails = serde_json::from_str(&error_details)
+        .map_err(|e| format!("Failed to parse error details: {}", e))?;
+
+    let error_list = if let Some(ref errors) = details.all_errors {
+        errors
+            .iter()
+            .map(|e| {
+                if let Some(line) = e.line {
+                    format!("Line {}: {}", line, e.message)
+                } else {
+                    e.message.clone()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    } else {
+        details.message.clone()
+    };
+
+    let prompt = format!(
+        r#"You are a {} syntax error fixer. Your task is to fix ONLY the syntax errors in the provided content.
+
+Errors found:
+{}
+
+Content to fix:
+{}
+
+Instructions:
+1. Fix ONLY the syntax errors listed above
+2. Preserve all data and structure
+3. Do not add explanations or comments
+4. Return ONLY the complete corrected {}
+5. Ensure the output is valid {}
+
+Fixed {}:"#,
+        details.error_type,
+        error_list,
+        content,
+        details.error_type,
+        details.error_type,
+        details.error_type
+    );
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(60))
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+
+    let request_body = serde_json::json!({
+        "model": model,
+        "messages": [
+            {
+                "role": "system",
+                "content": format!("You are a {} syntax error fixing assistant. Only output valid {}, nothing else.", details.error_type, details.error_type)
+            },
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ],
+        "temperature": 0.1,
+        "max_tokens": 16000
+    });
+
+    let response = client
+        .post("https://api.openai.com/v1/chat/completions")
+        .header("Authorization", format!("Bearer {}", api_key))
+        .header("Content-Type", "application/json")
+        .json(&request_body)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to call OpenAI API: {}", e))?;
+
+    if !response.status().is_success() {
+        let error_text = response.text().await.unwrap_or_default();
+        let error_message = if let Ok(error_data) = serde_json::from_str::<serde_json::Value>(&error_text) {
+            error_data["error"]["message"].as_str()
+                .unwrap_or(&error_text)
+                .to_string()
+        } else {
+            format!("OpenAI API error: {}", error_text)
+        };
+        return Err(error_message);
+    }
+
+    let data: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse OpenAI response: {}", e))?;
+
+    let mut fixed = data["choices"][0]["message"]["content"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
+
+    // Remove markdown code block markers
+    if fixed.contains("```") {
+        let mut in_code_block = false;
+        let mut code_lines = Vec::new();
+
+        for line in fixed.lines() {
+            if line.trim().starts_with("```") {
+                in_code_block = !in_code_block;
+            } else if in_code_block {
+                code_lines.push(line);
+            }
+        }
+
+        if !code_lines.is_empty() {
+            fixed = code_lines.join("\n");
+        } else {
+            fixed = fixed
+                .lines()
+                .filter(|line| !line.trim().starts_with("```"))
+                .collect::<Vec<_>>()
+                .join("\n");
+        }
+    }
+
+    // Extract content based on type
+    fixed = extract_content(fixed.trim(), &details.error_type);
+
+    Ok(fixed.trim().to_string())
+}
+
+// Helper function to extract JSON/XML content
+fn extract_content(text: &str, error_type: &str) -> String {
+    let trimmed = text.trim();
+
+    if error_type == "JSON" {
+        // Find first { or [
+        if let Some(start_idx) = trimmed.find(|c| c == '{' || c == '[') {
+            let start_char = trimmed.chars().nth(start_idx).unwrap();
+            let end_char = if start_char == '{' { '}' } else { ']' };
+
+            // Find matching closing brace
+            let mut depth = 0;
+            let mut end_idx = start_idx;
+            for (i, c) in trimmed[start_idx..].char_indices() {
+                if c == start_char {
+                    depth += 1;
+                } else if c == end_char {
+                    depth -= 1;
+                    if depth == 0 {
+                        end_idx = start_idx + i + 1;
+                        break;
+                    }
+                }
+            }
+
+            if end_idx > start_idx {
+                return trimmed[start_idx..end_idx].to_string();
+            }
+        }
+    } else if error_type == "XML" {
+        // For XML, find first < and last >
+        if let Some(start_idx) = trimmed.find('<') {
+            if let Some(end_idx) = trimmed.rfind('>') {
+                if end_idx > start_idx {
+                    return trimmed[start_idx..=end_idx].to_string();
+                }
+            }
+        }
+    }
+
+    trimmed.to_string()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_shell::init())
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -310,6 +755,9 @@ pub fn run() {
             check_ollama_status,
             pull_ollama_model,
             fix_with_ollama,
+            fix_with_claude,
+            fix_with_groq,
+            fix_with_openai,
             check_model_available,
             save_file_to_path,
             read_file_from_path,

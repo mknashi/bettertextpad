@@ -1,8 +1,8 @@
 // AI Provider types
 export const AI_PROVIDERS = {
   GROQ: 'groq',
-  OPENAI: 'openai',
-  CLAUDE: 'claude'
+  OPENAI: 'openai'
+  // CLAUDE: 'claude' // Temporarily disabled due to CORS issues
 };
 
 // Groq models
@@ -258,60 +258,78 @@ Fixed ${errorDetails.type}:`;
 
     const prompt = this.buildFixPrompt(content, errorDetails);
 
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model,
-        max_tokens: 16000,
-        system: `You are a ${errorDetails.type} syntax error fixing assistant. Only output valid ${errorDetails.type}, nothing else.`,
-        messages: [
-          {
-            role: 'user',
-            content: prompt
+    try {
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model,
+          max_tokens: 16000,
+          system: `You are a ${errorDetails.type} syntax error fixing assistant. Only output valid ${errorDetails.type}, nothing else.`,
+          messages: [
+            {
+              role: 'user',
+              content: prompt
+            }
+          ],
+          temperature: 0.1
+        })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        let errorMessage = `Claude API error: ${response.status}`;
+        try {
+          const errorData = JSON.parse(errorText);
+          errorMessage = errorData.error?.message || errorData.message || errorMessage;
+        } catch (e) {
+          // If we can't parse the error, use the text
+          if (errorText) errorMessage = `${errorMessage} - ${errorText.substring(0, 200)}`;
+        }
+        throw new Error(errorMessage);
+      }
+
+      const data = await response.json();
+      let fixed = data.content[0]?.text || '';
+
+      // Remove markdown code block markers but preserve content
+      if (fixed.includes('```')) {
+        const lines = fixed.split('\n');
+        const codeLines = [];
+        let inCodeBlock = false;
+
+        for (const line of lines) {
+          if (line.trim().startsWith('```')) {
+            inCodeBlock = !inCodeBlock;
+          } else if (inCodeBlock) {
+            codeLines.push(line);
           }
-        ],
-        temperature: 0.1
-      })
-    });
+        }
 
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: { message: 'Unknown error' } }));
-      throw new Error(error.error?.message || `Claude API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    let fixed = data.content[0]?.text || '';
-
-    // Remove markdown code block markers but preserve content
-    if (fixed.includes('```')) {
-      const lines = fixed.split('\n');
-      const codeLines = [];
-      let inCodeBlock = false;
-
-      for (const line of lines) {
-        if (line.trim().startsWith('```')) {
-          inCodeBlock = !inCodeBlock;
-        } else if (inCodeBlock) {
-          codeLines.push(line);
+        if (codeLines.length > 0) {
+          fixed = codeLines.join('\n');
+        } else {
+          fixed = lines.filter(line => !line.trim().startsWith('```')).join('\n');
         }
       }
 
-      if (codeLines.length > 0) {
-        fixed = codeLines.join('\n');
-      } else {
-        fixed = lines.filter(line => !line.trim().startsWith('```')).join('\n');
+      // Extract complete JSON/XML content
+      fixed = this.extractContent(fixed, errorDetails.type);
+
+      return fixed.trim();
+    } catch (error) {
+      // Network error or fetch failed
+      if (error.message.includes('Claude API error')) {
+        throw error; // Re-throw API errors
       }
+      // This is a network-level error (CORS, connection failed, etc.)
+      // Claude API has CORS restrictions in browsers
+      throw new Error(`Browser CORS restriction: Claude API cannot be called directly from web browsers. Please use the desktop app for Claude AI features, or switch to Groq/OpenAI providers which support browser access.`);
     }
-
-    // Extract complete JSON/XML content
-    fixed = this.extractContent(fixed, errorDetails.type);
-
-    return fixed.trim();
   }
 
   // Main fix function
@@ -440,32 +458,47 @@ Fixed ${errorDetails.type}:`;
       if (provider === AI_PROVIDERS.CLAUDE) {
         if (!claudeApiKey) throw new Error('Claude API key is required');
 
-        const response = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: {
-            'x-api-key': claudeApiKey,
-            'anthropic-version': '2023-06-01',
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            model: claudeModel || CLAUDE_MODELS['claude-3-5-haiku'].id,
-            max_tokens: 4000,
-            messages: [
-              {
-                role: 'user',
-                content: `You are a helpful writing assistant. Output only the transformed text, no explanations.\n\n${prompt}`
-              }
-            ]
-          })
-        });
+        try {
+          const response = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+              'x-api-key': claudeApiKey,
+              'anthropic-version': '2023-06-01',
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              model: claudeModel || CLAUDE_MODELS['claude-3-5-haiku'].id,
+              max_tokens: 4000,
+              system: 'You are a helpful writing assistant. Output only the transformed text, no explanations.',
+              messages: [
+                {
+                  role: 'user',
+                  content: prompt
+                }
+              ]
+            })
+          });
 
-        if (!response.ok) {
-          const error = await response.json().catch(() => ({ error: { message: 'Unknown error' } }));
-          throw new Error(error.error?.message || `Claude API error: ${response.status}`);
+          if (!response.ok) {
+            const errorText = await response.text();
+            let errorMessage = `Claude API error: ${response.status}`;
+            try {
+              const errorData = JSON.parse(errorText);
+              errorMessage = errorData.error?.message || errorData.message || errorMessage;
+            } catch (e) {
+              if (errorText) errorMessage = `${errorMessage} - ${errorText.substring(0, 200)}`;
+            }
+            throw new Error(errorMessage);
+          }
+
+          const data = await response.json();
+          return data.content[0]?.text?.trim() || text;
+        } catch (error) {
+          if (error.message.includes('Claude API error')) {
+            throw error;
+          }
+          throw new Error(`Browser CORS restriction: Claude API cannot be called directly from web browsers. Please use the desktop app for Claude AI features, or switch to Groq/OpenAI providers.`);
         }
-
-        const data = await response.json();
-        return data.content[0]?.text?.trim() || text;
       }
 
       throw new Error('Invalid AI provider');

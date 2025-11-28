@@ -5545,8 +5545,6 @@ const BetterTextPad = () => {
                               </thead>
                               <tbody>
                                 {csvPreviewRows.map((row, rowIdx) => {
-                                  const evenRowClass = theme === 'dark' ? 'bg-gray-800/40' : 'bg-gray-50';
-                                  const oddRowClass = theme === 'dark' ? 'bg-gray-900/80' : 'bg-white';
                                   const lineNumBgColor = theme === 'dark' ? '#1f2937' : '#f3f4f6';
                                   const isActiveRow = csvPreviewHasDataRows && rowIdx === activeCsvRowIndex;
                                   const rowHighlightStyle = isActiveRow ? { backgroundColor: csvRowHighlightBg } : null;
@@ -5563,7 +5561,7 @@ const BetterTextPad = () => {
                                         }
                                       }}
                                       onClick={csvPreviewHasDataRows ? () => handleCsvPreviewRowClick(rowIdx) : undefined}
-                                      className={`${rowIdx % 2 === 0 ? evenRowClass : oddRowClass} ${csvPreviewHasDataRows ? 'cursor-pointer transition-colors' : ''}`}
+                                      className={`${csvPreviewHasDataRows ? 'cursor-pointer transition-colors' : ''}`}
                                       style={rowHighlightStyle || undefined}
                                     >
                                       <td
@@ -5572,20 +5570,41 @@ const BetterTextPad = () => {
                                       >
                                         {editorLineNumber}
                                       </td>
-                                      {Array.from({ length: csvPreviewStats.columnCount }).map((_, cellIdx) => (
-                                        <td
-                                          key={`csv-cell-${rowIdx}-${cellIdx}`}
-                                          className="border-r border-b border-gray-700 px-2 py-1 whitespace-pre overflow-hidden"
-                                          style={{
-                                            width: `${csvColumnWidthsForTab[cellIdx] || DEFAULT_CSV_COLUMN_WIDTH}px`,
-                                            minWidth: `${MIN_CSV_COLUMN_WIDTH}px`,
-                                            borderLeftWidth: cellIdx === 0 ? '1px' : '0',
-                                            textOverflow: 'ellipsis'
-                                          }}
-                                        >
-                                          {row[cellIdx] ?? ''}
-                                        </td>
-                                      ))}
+                                      {Array.from({ length: csvPreviewStats.columnCount }).map((_, cellIdx) => {
+                                        // Combine row and column alternating colors for a grid pattern
+                                        let cellBg;
+                                        if (theme === 'dark') {
+                                          // Dark mode: 4 different shades based on row/column combination
+                                          if (rowIdx % 2 === 0) {
+                                            cellBg = cellIdx % 2 === 0 ? '#1f2937' : '#1a222e'; // Even row
+                                          } else {
+                                            cellBg = cellIdx % 2 === 0 ? '#161e2a' : '#111827'; // Odd row
+                                          }
+                                        } else {
+                                          // Light mode: 4 different shades
+                                          if (rowIdx % 2 === 0) {
+                                            cellBg = cellIdx % 2 === 0 ? '#f9fafb' : '#f3f4f6'; // Even row
+                                          } else {
+                                            cellBg = cellIdx % 2 === 0 ? '#ffffff' : '#f9fafb'; // Odd row
+                                          }
+                                        }
+
+                                        return (
+                                          <td
+                                            key={`csv-cell-${rowIdx}-${cellIdx}`}
+                                            className="border-r border-b border-gray-700 px-2 py-1 whitespace-pre overflow-hidden"
+                                            style={{
+                                              width: `${csvColumnWidthsForTab[cellIdx] || DEFAULT_CSV_COLUMN_WIDTH}px`,
+                                              minWidth: `${MIN_CSV_COLUMN_WIDTH}px`,
+                                              borderLeftWidth: cellIdx === 0 ? '1px' : '0',
+                                              textOverflow: 'ellipsis',
+                                              backgroundColor: isActiveRow ? undefined : cellBg
+                                            }}
+                                          >
+                                            {row[cellIdx] ?? ''}
+                                          </td>
+                                        );
+                                      })}
                                     </tr>
                                   );
                                 })}
@@ -5821,7 +5840,11 @@ const BetterTextPad = () => {
         ) : (
           <div className={`flex items-center justify-center h-full w-full ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
             <div className="text-center max-w-2xl px-6">
-              <FileText className="w-16 h-16 mx-auto mb-4 opacity-40" />
+              <img
+                src="/betternotepad-logo.svg"
+                className="w-24 h-24 mx-auto mb-4"
+                alt="Better Text Pad"
+              />
               <p className={`text-2xl font-bold mb-2 ${theme === 'dark' ? 'text-gray-200' : 'text-gray-800'}`}>Welcome to Better Text Pad</p>
               <p className={`text-sm mb-6 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
                 A powerful code & text editor with syntax highlighting, AI-assisted error fixing, and more
@@ -5835,6 +5858,10 @@ const BetterTextPad = () => {
                     <div className="flex items-center gap-2">
                       <span className="text-green-500">✓</span>
                       <span>40+ file types with syntax highlighting</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-green-500">✓</span>
+                      <span>VIM mode with keybindings support</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="text-green-500">✓</span>
@@ -5854,7 +5881,7 @@ const BetterTextPad = () => {
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="text-green-500">✓</span>
-                      <span>Save to original file (preserves extensions)</span>
+                      <span>Desktop app with file associations</span>
                     </div>
                   </div>
                 </div>
@@ -5869,7 +5896,15 @@ const BetterTextPad = () => {
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="text-green-500">✓</span>
-                      <span>Multiple AI providers (Ollama, Groq, OpenAI, Claude)</span>
+                      <span>AI text transformations with accept/reject</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-green-500">✓</span>
+                      <span>Markdown formatting for AI responses</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-green-500">✓</span>
+                      <span>Multiple AI providers (Ollama, Groq, OpenAI)</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="text-green-500">✓</span>
@@ -5877,15 +5912,11 @@ const BetterTextPad = () => {
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="text-green-500">✓</span>
+                      <span>Notes with AI features & folders</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-green-500">✓</span>
                       <span>Find & replace with regex support</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-green-500">✓</span>
-                      <span>Notes & folders organization</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-green-500">✓</span>
-                      <span>Todo list with categorization</span>
                     </div>
                   </div>
                 </div>
