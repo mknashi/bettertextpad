@@ -23,6 +23,12 @@ import { Prec } from '@codemirror/state';
 import { syntaxHighlighting, HighlightStyle } from '@codemirror/language';
 import { tags as t } from '@lezer/highlight';
 
+// Completion imports
+import { autocompletion, acceptCompletion, completionStatus, startCompletion } from '@codemirror/autocomplete';
+import { createSmartCompletionSource } from '../utils/completions/completionSource';
+import { keymap } from '@codemirror/view';
+import { indentWithTab } from '@codemirror/commands';
+
 // Custom syntax highlighting for dark mode
 const darkHighlighting = HighlightStyle.define([
   { tag: t.keyword, color: '#c678dd' }, // purple - keywords like if, const, function
@@ -74,7 +80,8 @@ const CodeMirrorEditor = forwardRef(({
   readOnly = false,
   placeholder = '',
   className = '',
-  style = {}
+  style = {},
+  aiSettings = null // AI completion settings
 }, ref) => {
   const editorRef = useRef(null);
   const vimModeRef = useRef('normal');
@@ -207,8 +214,49 @@ const CodeMirrorEditor = forwardRef(({
       }));
     }
 
+    // Add DOM-level Tab key handler with highest precedence to prevent browser navigation
+    exts.push(Prec.highest(EditorView.domEventHandlers({
+      keydown: (event, view) => {
+        if (event.key === 'Tab') {
+          const status = completionStatus(view.state);
+          if (status === 'active') {
+            // Prevent default browser Tab navigation
+            event.preventDefault();
+            event.stopPropagation();
+            // Accept the completion
+            acceptCompletion(view);
+            return true;
+          }
+        }
+        return false;
+      }
+    })));
+
+    // Add custom completion source with language-specific keywords and snippets
+    // Pass AI settings to enable AI-powered completions
+    exts.push(autocompletion({
+      override: [createSmartCompletionSource(language, aiSettings)],
+      activateOnTyping: true,
+      maxRenderedOptions: 10,
+      closeOnBlur: true,
+      defaultKeymap: true, // Enable default keymap for arrow keys, Enter, Escape
+      interactionDelay: 75,
+      aboveCursor: false,
+    }));
+
+    // Add Ctrl-Space to trigger completion manually
+    exts.push(keymap.of([
+      {
+        key: 'Ctrl-Space',
+        run: startCompletion
+      }
+    ]));
+
+    // Add Tab indentation (lower priority, runs when completion doesn't handle it)
+    exts.push(keymap.of([indentWithTab]));
+
     return exts;
-  }, [vimEnabled, language, getLanguageExtension, onCursorChange, theme]);
+  }, [vimEnabled, language, getLanguageExtension, onCursorChange, theme, aiSettings]);
 
   // Handle VIM mode changes
   useEffect(() => {
@@ -302,6 +350,18 @@ const CodeMirrorEditor = forwardRef(({
           background-color: ${theme === 'dark' ? '#fbbf24' : '#3b82f6'} !important;
           color: ${theme === 'dark' ? '#000000' : '#ffffff'} !important;
         }
+
+        /* AI completion styling */
+        .codemirror-wrapper .cm-completionIcon-ai::after {
+          content: "✨";
+          font-size: 14px;
+        }
+        .codemirror-wrapper .cm-completionLabel[aria-selected] .cm-completionIcon-ai::after {
+          filter: brightness(1.2);
+        }
+        .codemirror-wrapper .cm-tooltip-autocomplete ul li[aria-selected] {
+          background-color: ${theme === 'dark' ? 'rgba(251, 191, 36, 0.2)' : 'rgba(59, 130, 246, 0.2)'} !important;
+        }
       `}</style>
       <CodeMirror
         ref={(r) => {
@@ -335,7 +395,7 @@ const CodeMirrorEditor = forwardRef(({
           syntaxHighlighting: true,
           bracketMatching: true,
           closeBrackets: true,
-          autocompletion: true,
+          autocompletion: false, // Disabled - using custom completion in extensions
           rectangularSelection: true,
           crosshairCursor: true,
           highlightActiveLine: true,

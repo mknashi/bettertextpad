@@ -327,40 +327,45 @@ const AISettingsModal = ({ settings, onSave, onClose, theme, isDesktop, desktopA
                 </div>
               </label>
 
-              {/* Claude Mode - Temporarily disabled */}
-              {/* <label className={`flex items-start gap-3 p-4 rounded-lg border-2 cursor-pointer transition-all ${
-                localSettings.provider === AI_PROVIDERS.CLAUDE
-                  ? theme === 'dark'
-                    ? 'border-purple-500 bg-purple-900/20'
-                    : 'border-purple-500 bg-purple-50'
-                  : theme === 'dark'
-                    ? 'border-gray-700 hover:border-gray-600'
-                    : 'border-gray-200 hover:border-gray-300'
-              }`}>
-                <input
-                  type="radio"
-                  name="provider"
-                  value={AI_PROVIDERS.CLAUDE}
-                  checked={localSettings.provider === AI_PROVIDERS.CLAUDE}
-                  onChange={(e) => setLocalSettings({ ...localSettings, provider: e.target.value })}
-                  className="mt-1"
-                />
-                <div className="flex-1">
-                  <div className="flex items-center gap-2">
-                    <Cloud className="w-5 h-5" />
-                    <span className={`font-semibold ${
-                      theme === 'dark' ? 'text-gray-100' : 'text-gray-900'
+              {/* Claude Mode - Desktop only (CORS restrictions in browser) */}
+              {isDesktop && (
+                <label className={`flex items-start gap-3 p-4 rounded-lg border-2 cursor-pointer transition-all ${
+                  localSettings.provider === AI_PROVIDERS.CLAUDE
+                    ? theme === 'dark'
+                      ? 'border-purple-500 bg-purple-900/20'
+                      : 'border-purple-500 bg-purple-50'
+                    : theme === 'dark'
+                      ? 'border-gray-700 hover:border-gray-600'
+                      : 'border-gray-200 hover:border-gray-300'
+                }`}>
+                  <input
+                    type="radio"
+                    name="provider"
+                    value={AI_PROVIDERS.CLAUDE}
+                    checked={localSettings.provider === AI_PROVIDERS.CLAUDE}
+                    onChange={(e) => setLocalSettings({ ...localSettings, provider: e.target.value })}
+                    className="mt-1"
+                  />
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <Cloud className="w-5 h-5" />
+                      <span className={`font-semibold ${
+                        theme === 'dark' ? 'text-gray-100' : 'text-gray-900'
+                      }`}>
+                        Claude
+                      </span>
+                      <span className="text-xs px-2 py-0.5 rounded bg-blue-500/20 text-blue-400">
+                        Desktop
+                      </span>
+                    </div>
+                    <p className={`text-sm mt-1 ${
+                      theme === 'dark' ? 'text-gray-400' : 'text-gray-600'
                     }`}>
-                      Claude
-                    </span>
+                      Advanced reasoning • Requires API key • Pay per use
+                    </p>
                   </div>
-                  <p className={`text-sm mt-1 ${
-                    theme === 'dark' ? 'text-gray-400' : 'text-gray-600'
-                  }`}>
-                    Advanced reasoning • Requires API key • Pay per use
-                  </p>
-                </div>
-              </label> */}
+                </label>
+              )}
             </div>
           </div>
 
@@ -576,8 +581,8 @@ const AISettingsModal = ({ settings, onSave, onClose, theme, isDesktop, desktopA
             </div>
           )}
 
-          {/* Claude Settings - Temporarily disabled */}
-          {/* {localSettings.provider === AI_PROVIDERS.CLAUDE && (
+          {/* Claude Settings - Desktop only */}
+          {isDesktop && localSettings.provider === AI_PROVIDERS.CLAUDE && (
             <div className="space-y-4">
               <div>
                 <label className={`block text-sm font-semibold mb-3 ${
@@ -678,7 +683,45 @@ const AISettingsModal = ({ settings, onSave, onClose, theme, isDesktop, desktopA
                 </select>
               </div>
             </div>
-          )} */}
+          )}
+
+          {/* AI Completions Toggle */}
+          <div className={`border-t pt-6 ${
+            theme === 'dark' ? 'border-gray-700' : 'border-gray-200'
+          }`}>
+            <label className="flex items-start gap-4 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={localSettings.enableAICompletions || false}
+                onChange={(e) => setLocalSettings({ ...localSettings, enableAICompletions: e.target.checked })}
+                className="mt-1 w-5 h-5 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+              />
+              <div className="flex-1">
+                <div className="flex items-center gap-2">
+                  <span className={`font-semibold ${
+                    theme === 'dark' ? 'text-gray-100' : 'text-gray-900'
+                  }`}>
+                    Enable AI-Powered Code Completions
+                  </span>
+                  <span className="text-xs px-2 py-0.5 rounded bg-purple-500/20 text-purple-400">
+                    Beta
+                  </span>
+                </div>
+                <p className={`text-sm mt-1 ${
+                  theme === 'dark' ? 'text-gray-400' : 'text-gray-600'
+                }`}>
+                  Get context-aware code suggestions when you press Ctrl+Space.
+                  AI completions appear at the top of the suggestion list marked with a ✨ icon.
+                </p>
+                <p className={`text-xs mt-2 ${
+                  theme === 'dark' ? 'text-gray-500' : 'text-gray-500'
+                }`}>
+                  Note: AI completions only trigger on manual completion (Ctrl+Space), not while typing.
+                  This helps reduce API costs and latency.
+                </p>
+              </div>
+            </label>
+          </div>
 
           {/* Privacy Notice */}
           <div className={`p-4 rounded-lg ${
@@ -700,6 +743,8 @@ const AISettingsModal = ({ settings, onSave, onClose, theme, isDesktop, desktopA
                   <strong>Cloud AI:</strong> Your content will be sent to the provider's servers for processing.
                   <br />
                   <strong>API Keys:</strong> Encrypted before storage using AES-256-GCM. Keys never leave your device.
+                  <br />
+                  <strong>Completions:</strong> Code context (up to ~20 lines) is sent when you manually trigger AI completions.
                 </p>
               </div>
             </div>

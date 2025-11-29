@@ -693,6 +693,68 @@ Fixed {}:"#,
     Ok(fixed.trim().to_string())
 }
 
+// Get Claude completion for code suggestions
+#[tauri::command]
+async fn get_claude_completion(
+    prompt: String,
+    api_key: String,
+    model: String,
+) -> Result<String, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+
+    let request_body = serde_json::json!({
+        "model": model,
+        "max_tokens": 50,
+        "system": "You are a code completion assistant. Return only the completion text, no explanations or markdown.",
+        "messages": [
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ],
+        "temperature": 0.2
+    });
+
+    let response = client
+        .post("https://api.anthropic.com/v1/messages")
+        .header("x-api-key", api_key)
+        .header("anthropic-version", "2023-06-01")
+        .header("Content-Type", "application/json")
+        .json(&request_body)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to call Claude API: {}", e))?;
+
+    if !response.status().is_success() {
+        let error_text = response.text().await.unwrap_or_default();
+        let error_message = if let Ok(error_data) = serde_json::from_str::<serde_json::Value>(&error_text) {
+            error_data["error"]["message"].as_str()
+                .or(error_data["message"].as_str())
+                .unwrap_or(&error_text)
+                .to_string()
+        } else {
+            format!("Claude API error: {}", error_text)
+        };
+        return Err(error_message);
+    }
+
+    let data: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse Claude response: {}", e))?;
+
+    let completion = data["content"][0]["text"]
+        .as_str()
+        .unwrap_or("")
+        .trim()
+        .to_string();
+
+    Ok(completion)
+}
+
 // Helper function to extract JSON/XML content
 fn extract_content(text: &str, error_type: &str) -> String {
     let trimmed = text.trim();
@@ -758,6 +820,7 @@ pub fn run() {
             fix_with_claude,
             fix_with_groq,
             fix_with_openai,
+            get_claude_completion,
             check_model_available,
             save_file_to_path,
             read_file_from_path,

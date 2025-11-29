@@ -5025,6 +5025,7 @@ const BetterTextPad = () => {
           onVimModeChange={(mode) => {
             setVimMode(mode);
           }}
+          aiSettings={aiSettings}
           onCursorChange={(pos) => {
             // Update cursor position for display
             if (activeTab && activeTab.content) {
@@ -5307,6 +5308,7 @@ const BetterTextPad = () => {
                   tabId: tab.id
                 });
               }}
+              title={tab.title}
               className={`flex items-center gap-2 px-4 py-2 border-r border-gray-700 cursor-move min-w-[150px] max-w-[200px] group
                 ${tab.id === activeTabId ? 'bg-gray-900 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-750'}
                 ${draggedTabId === tab.id ? 'opacity-50' : ''}

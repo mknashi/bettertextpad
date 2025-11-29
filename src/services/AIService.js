@@ -1,8 +1,8 @@
 // AI Provider types
 export const AI_PROVIDERS = {
   GROQ: 'groq',
-  OPENAI: 'openai'
-  // CLAUDE: 'claude' // Temporarily disabled due to CORS issues
+  OPENAI: 'openai',
+  CLAUDE: 'claude' // Available in desktop mode (CORS restrictions apply in browser)
 };
 
 // Groq models
